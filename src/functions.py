@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
+from typing import cast, Dict, Any
 
 import pandas as pd
 import polars as pl
@@ -39,7 +40,7 @@ def send_telegram_message(bot_token: str, chat_id: str, text: str) -> bool:
         print(f"Telegram send error: {error_msg}")
         return False
 
-def get_telegram_updates(bot_token: str, offset: Optional[int] = None) -> Dict[str, Any]:
+def get_telegram_updates(bot_token: str, offset: Optional[int] = None, poll_timeout: int = 10) -> Dict[str, Any]:
     """Fetch new messages from the Telegram bot.
     
     Args:
@@ -50,19 +51,19 @@ def get_telegram_updates(bot_token: str, offset: Optional[int] = None) -> Dict[s
         Dict containing the updates or error information
     """
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-    params = {'timeout': 10}
+    params = {'timeout': poll_timeout}
     if offset is not None:
         params['offset'] = offset + 1
     
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, timeout=poll_timeout + 5)
         response.raise_for_status()
         return response.json()
     except Exception as e:
         print(f"Error fetching Telegram updates: {e}")
         return {"ok": False, "result": []}
 
-def _wait_for_redirect_url(bot_token: str, chat_id: str, timeout: int = 60) -> str:
+def _wait_for_redirect_url(bot_token: str, chat_id: str, timeout: int = 300) -> str:
     """Wait for user to send the redirect URL with request token via Telegram.
     
     Args:
@@ -78,21 +79,36 @@ def _wait_for_redirect_url(bot_token: str, chat_id: str, timeout: int = 60) -> s
     """
     last_update_id = None
     start_time = time.time()
+
+    # Drain any previous (old) updates so we only receive fresh messages after this call
+    try:
+        existing = get_telegram_updates(bot_token, offset=None, poll_timeout=1)
+        if existing.get("ok") and existing.get("result"):
+            # mark last_update_id as the highest seen update_id so older messages are ignored
+            last_update_id = max(u.get("update_id", 0) for u in existing["result"])
+    except Exception:
+        # If draining fails, continue without a last_update_id (we'll still poll normally)
+        last_update_id = None
     
     while time.time() - start_time < timeout:
-        updates = get_telegram_updates(bot_token, last_update_id)
+        updates = get_telegram_updates(bot_token, last_update_id, poll_timeout=5)
         
-        if updates.get('ok') and updates['result']:
+        if updates.get('ok') and updates.get('result'):
             for update in updates['result']:
-                last_update_id = update['update_id']
+                last_update_id = update.get('update_id', last_update_id)
                 
                 # Process only text messages
-                if 'message' in update and 'text' in update['message']:
-                    text = update['message']['text'].strip()
+                # if 'message' in update and 'text' in update['message']:
+                #     text = update['message']['text'].strip()
+                message = update.get('message') or {}
+                text = message.get('text')
+                if not text:
+                   continue
+                text = text.strip()
                     
                     # Check for request token in the message
-                    if 'request_token=' in text or 'kite.trade/connect' in text or 'kite.zerodha.com/connect' in text:
-                        return text
+                if 'request_token=' in text or 'kite.trade/connect' in text or 'kite.zerodha.com/connect' in text:
+                    return text
         
         time.sleep(2)  # Check for updates every 2 seconds
     
@@ -193,7 +209,7 @@ def login(api_key: str, api_secret: str, bot_token: str, chat_id: str) -> KiteCo
         send_telegram_message(bot_token, chat_id, auth_message)
         
         # Wait for user to send the redirect URL (1 minute timeout)
-        redirect_url = _wait_for_redirect_url(bot_token, chat_id, timeout=60)
+        redirect_url = _wait_for_redirect_url(bot_token, chat_id, timeout=300)
         
         # Parse request token from URL
         parsed_url = urlparse(redirect_url)
@@ -208,11 +224,21 @@ def login(api_key: str, api_secret: str, bot_token: str, chat_id: str) -> KiteCo
         # Generate and save session
         send_telegram_message(bot_token, chat_id, "🔄 Generating session...")
         session = kite.generate_session(request_token, api_secret=api_secret)
-        kite.set_access_token(session['access_token'])
+        # kite.set_access_token(session['access_token'])
         
+        # _save_access_token(session['access_token'], deps_dir)
+        session_dict = cast(Dict[str, Any], session)
+        access_token = session_dict.get("access_token")
+        if not access_token:
+            error_msg = "❌ Authentication failed: no access_token in session response"
+            send_telegram_message(bot_token, chat_id, error_msg)
+            raise ValueError("Invalid session: access_token missing")
+        
+        kite.set_access_token(str(access_token))
+
         # Save access token
-        deps_dir = Path("Dependencies")
-        _save_access_token(session['access_token'], deps_dir)
+        deps_dir = Path("src/Dependencies")
+        _save_access_token(str(access_token), deps_dir)
         
         # Download market instruments
         _download_instruments(kite, bot_token, chat_id, deps_dir)
@@ -300,7 +326,7 @@ def convert_heikin_ashi(df):
 
 
 # noinspection PyTypeChecker
-def get_instrument_token(exchange: str, ticker: str) -> int:
+def get_instrument_token(exchange: str, ticker: str) -> Optional[int]:
     """
     Get instrument token for a given ticker symbol and exchange.
 

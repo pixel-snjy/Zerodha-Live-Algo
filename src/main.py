@@ -10,13 +10,13 @@ from kiteconnect import KiteConnect
 import functions
 
 ##### Create Dependencies directory if it doesn't exist #####
-deps_dir = Path("Dependencies")
+deps_dir = Path("src/Dependencies")
 deps_dir.mkdir(exist_ok=True)
 
 #-----------------------------------------------------------------------------------------------------------------------
 
 ##### Loading key credentials #####
-with open("do_not_delete/api-core.json", "r") as creds:
+with open("src/do_not_delete/api-core.json", "r") as creds:
     data = json.load(creds)
 api_key = data["zerodha_api_key"]
 api_secret = data["zerodha_api_secret"]
@@ -45,7 +45,9 @@ except Exception as e:
 last_run_minute = None
 transaction_type = None
 
-while True:
+testing = 'yes'
+
+while testing == 'false':
     # if datetime.now().time() <= datetime.time(datetime.strptime("09:15", "%H:%M")):
     #     print("Market is closed")
     #     time.sleep(60)

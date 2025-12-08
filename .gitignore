@@ -1,1 +1,3 @@
 .venv/
+src/Dependencies/access_token.txt
+src/Dependencies/tradeable_instruments.csv

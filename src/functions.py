@@ -339,7 +339,7 @@ def get_instrument_token(exchange: str, ticker: str) -> Optional[int]:
     """
     try:
         # Read the CSV file into a DataFrame
-        instruments_df = pd.read_csv("Dependencies/tradeable_instruments.csv")
+        instruments_df = pd.read_csv("src/Dependencies/tradeable_instruments.csv")
 
         # Convert ticker to uppercase and strip whitespace
         ticker_upper = ticker.upper().strip()
@@ -388,7 +388,7 @@ def get_futures_list(underlying_name):
     try:
         # Read the instrument file using Polars
         try:
-            df = pl.scan_csv('Dependencies/tradeable_instruments.csv')
+            df = pl.scan_csv('src/Dependencies/tradeable_instruments.csv')
         except Exception as e:
             print(f"❌ Error reading instrument file: {str(e)}")
             return None

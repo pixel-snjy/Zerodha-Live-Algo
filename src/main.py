@@ -45,30 +45,31 @@ except Exception as e:
 last_run_minute = None
 transaction_type = None
 
-testing = 'yes'
+testing = 0 # 1 means yes && 0 means no
 
-while testing == 'false':
-    # if datetime.now().time() <= datetime.time(datetime.strptime("09:15", "%H:%M")):
-    #     print("Market is closed")
-    #     time.sleep(60)
-    #     continue
+while testing == 0:
+    # logic to skip the order flow beyond market hours
+    if datetime.now().time() <= datetime.time(datetime.strptime("09:15", "%H:%M")):
+        print("Market is closed")
+        # time.sleep(60)
+        continue
 
     # Logic to change order from regular to amo
-    current_date = datetime.now()
+    current_date = datetime.now().date()
     equity_trading_hours = (
             datetime.time(
             datetime.strptime("09:15", "%H:%M")) <= datetime.now().time() <= datetime.time(
             datetime.strptime("15:30", "%H:%M"))
     )
     if not equity_trading_hours:
-        equity_order_variety = 'amo'
+        order_variety = 'amo'
     else:
-        equity_order_variety = 'regular'
+        order_variety = 'regular'
 
     current_minute = datetime.now().minute
     if current_minute % 5 == 0 and last_run_minute != current_minute:
     # if True:
-        print("Running logic")
+        # print("Running logic")
         # for_15m_data = current_date - timedelta(days=28)
         for_5m_data = current_date - timedelta(days=10)
 
@@ -92,7 +93,7 @@ while testing == 'false':
             high=ha_fut_df['high'], low=ha_fut_df['low'], close=ha_fut_df['close'], length=18, multiplier=2
         ).round(2)
         st1_ha_direction = st1_ha.iloc[-2, 1]
-        stop_loss = round(st1_ha.iloc[-2, 2], 1)
+        stop_loss = st1_ha.iloc[-2, 0]
         st2_ha_direction = st2_ha.iloc[-2, 1]
 
         # Calling Futures
@@ -121,7 +122,7 @@ while testing == 'false':
             transaction_type       = "BUY"
             long_stop_loss_trigger = stop_loss
             risk_amount = near_futures_ltp - stop_loss
-            long_target_trigger = round(near_futures_ltp + (risk_amount * 3), 1)  # 1:3 risk-reward ratio
+            long_target_trigger = round(near_futures_ltp + (risk_amount.round(2) * 3), 1)  # 1:3 risk-reward ratio
 
             # Sending Telegram update
             telegram_message = (
@@ -134,7 +135,7 @@ while testing == 'false':
 
             # Placing Order
             order_id = kite.place_order(
-                variety            = equity_order_variety,
+                variety            = order_variety,
                 exchange           = "NFO",
                 tradingsymbol      = near_futures,
                 transaction_type   = transaction_type,
@@ -192,7 +193,7 @@ while testing == 'false':
 
             # Place Order
             order_id = kite.place_order(
-                variety              = equity_order_variety,
+                variety              = order_variety,
                 exchange             = "NFO",
                 tradingsymbol        = near_futures,
                 transaction_type     = transaction_type,
@@ -260,7 +261,7 @@ while testing == 'false':
     last_run_minute = current_minute
 
     # Checking the overall market close time
-    if datetime.now().time() >= datetime.time(datetime.strptime("23:30", "%H:%M")):
+    if datetime.now().time() >= datetime.time(datetime.strptime("15:30", "%H:%M")):
         # print("Market is closed")
         break
 

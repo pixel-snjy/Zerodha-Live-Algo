@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 import pandas_ta as pta
 from kiteconnect import KiteConnect
 
@@ -41,18 +42,43 @@ except Exception as e:
     kite.set_access_token(access_token)
 #-----------------------------------------------------------------------------------------------------------------------
 
+
+##### loading instrument file #####
+# instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
+instrument_file_pl = pl.scan_csv(deps_dir / 'tradeable_instruments.csv')
+
+
 ##### Static variables #####
 last_run_minute = None
 transaction_type = None
 
-testing = 0 # 1 means yes && 0 means no
+# 1 means yes && 0 means no
+testing = 1
+punch_order = 0
 
-while testing == 0:
+now = datetime.now()
+now_time = now.time()
+target_time = datetime.time(datetime.strptime("09:30", "%H:%M"))
+if testing == 0:
+    if now_time < target_time:
+        target_dt = datetime.combine(now.date(), target_time)
+        seconds_to_sleep = int((target_dt - now).total_seconds())
+        if seconds_to_sleep > 0:
+            time.sleep(seconds_to_sleep)
+        now_time = datetime.now().time()   
+
+while True:
     # logic to skip the order flow beyond market hours
-    if datetime.now().time() <= datetime.time(datetime.strptime("09:15", "%H:%M")):
-        print("Market is closed")
-        # time.sleep(60)
-        continue
+    if testing == 0:
+        if now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")):
+            # Send alert to Telegram
+            functions.send_telegram_message(
+                bot_token = telegram_bot_token,
+                chat_id   = personal_telegram_id,
+                text      = "Market is closed"
+                )
+            # print("Market is closed")
+            break
 
     # Logic to change order from regular to amo
     current_date = datetime.now().date()
@@ -67,37 +93,39 @@ while testing == 0:
         order_variety = 'regular'
 
     current_minute = datetime.now().minute
-    if current_minute % 5 == 0 and last_run_minute != current_minute:
-    # if True:
+    # if current_minute % 5 == 0 and last_run_minute != current_minute:
+    if True:
         # print("Running logic")
         # for_15m_data = current_date - timedelta(days=28)
         for_5m_data = current_date - timedelta(days=10)
 
         ##### Fetch Instrument #####
+        nifty_index = 256265
         # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
         #                                  to_date=current_date)
         chart_5m = kite.historical_data(instrument_token=256265, interval="5minute", from_date=for_5m_data,
                                         to_date=current_date)
 
         # chart = kite
-        fut_df = pd.DataFrame(chart_5m)
+        chart_df = pd.DataFrame(chart_5m)
         # opt_df = pd.DataFrame(chart_15m)
-        ha_fut_df = functions.convert_heikin_ashi(fut_df).round(2)
+        ha_chart_df = functions.convert_heikin_ashi(chart_df).round(2)
         # -----------------------------------------------------------------------------------------------------------------------
 
         ##### Strategy 1 ==>> Double SuperTrend for Directional Trade #####
         st1_ha = pta.supertrend(
-            high=ha_fut_df['high'], low=ha_fut_df['low'], close=ha_fut_df['close'], length=11, multiplier=1
+            high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=11, multiplier=1
         ).round(2)
         st2_ha = pta.supertrend(
-            high=ha_fut_df['high'], low=ha_fut_df['low'], close=ha_fut_df['close'], length=18, multiplier=2
+            high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=18, multiplier=2
         ).round(2)
         st1_ha_direction = st1_ha.iloc[-2, 1]
         stop_loss = st1_ha.iloc[-2, 0]
         st2_ha_direction = st2_ha.iloc[-2, 1]
+        selling_strike = int(round(stop_loss, -2))
 
         # Calling Futures
-        futures = functions.get_futures_list('NIFTY')
+        options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file_pl, strike=selling_strike)
 
         # Near Future & it's LTP fetched
         near_futures = futures[0]['tradingsymbol']
@@ -133,47 +161,48 @@ while testing == 0:
             )
             functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
-            # Placing Order
-            order_id = kite.place_order(
-                variety            = order_variety,
-                exchange           = "NFO",
-                tradingsymbol      = near_futures,
-                transaction_type   = transaction_type,
-                quantity           = int(futures[0]['lot_size']),
-                product            = "NRML",
-                order_type         = "LIMIT",
-                price              = near_futures_ltp
-            )
+            if punch_order == 1:
+                # Placing Order
+                order_id = kite.place_order(
+                    variety            = order_variety,
+                    exchange           = "NFO",
+                    tradingsymbol      = near_futures,
+                    transaction_type   = transaction_type,
+                    quantity           = int(futures[0]['lot_size']),
+                    product            = "NRML",
+                    order_type         = "LIMIT",
+                    price              = near_futures_ltp
+                )
 
-            # Placing GTT OCO
-            long_gtt_order_id  = kite.place_gtt(
-                trigger_type   = 'two-leg',
-                tradingsymbol  = near_futures,
-                exchange       = 'NFO',
-                trigger_values = [
-                    long_stop_loss_trigger,
-                    long_target_trigger
-                ],
-                last_price     = near_futures_ltp,
-                orders         = [
-                    # Stop loss order
-                    {
-                        "transaction_type": 'SELL',
-                        "quantity": int(futures[0]['lot_size']),
-                        "price": long_stop_loss_trigger,  # 0 for market order
-                        "order_type": "LIMIT",
-                        "product": "NRML"
-                    },
-                    # Target order
-                    {
-                        "transaction_type": 'SELL',
-                        "quantity": int(futures[0]['lot_size']),
-                        "price": long_target_trigger,  # 0 for market order
-                        "order_type": "LIMIT",
-                        "product": "NRML"
-                    }
-                ]
-            )
+                # Placing GTT OCO
+                long_gtt_order_id  = kite.place_gtt(
+                    trigger_type   = 'two-leg',
+                    tradingsymbol  = near_futures,
+                    exchange       = 'NFO',
+                    trigger_values = [
+                        long_stop_loss_trigger,
+                        long_target_trigger
+                    ],
+                    last_price     = near_futures_ltp,
+                    orders         = [
+                        # Stop loss order
+                        {
+                            "transaction_type": 'SELL',
+                            "quantity": int(futures[0]['lot_size']),
+                            "price": long_stop_loss_trigger,  # 0 for market order
+                            "order_type": "LIMIT",
+                            "product": "NRML"
+                        },
+                        # Target order
+                        {
+                            "transaction_type": 'SELL',
+                            "quantity": int(futures[0]['lot_size']),
+                            "price": long_target_trigger,  # 0 for market order
+                            "order_type": "LIMIT",
+                            "product": "NRML"
+                        }
+                    ]
+                )
 
         # Checking Short Condition
         elif sc1 and sc2 and sc3:
@@ -191,47 +220,48 @@ while testing == 0:
             )
             functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
-            # Place Order
-            order_id = kite.place_order(
-                variety              = order_variety,
-                exchange             = "NFO",
-                tradingsymbol        = near_futures,
-                transaction_type     = transaction_type,
-                quantity             = futures[0]['lot_size'],
-                product              = "NRML",
-                order_type           = "LIMIT",
-                price                = near_futures_ltp
-            )
+            if punch_order == 1:
+                # Place Order
+                order_id = kite.place_order(
+                    variety              = order_variety,
+                    exchange             = "NFO",
+                    tradingsymbol        = near_futures,
+                    transaction_type     = transaction_type,
+                    quantity             = futures[0]['lot_size'],
+                    product              = "NRML",
+                    order_type           = "LIMIT",
+                    price                = near_futures_ltp
+                )
 
-            # Placing GTT OCO
-            short_gtt_order_id = kite.place_gtt(
-                trigger_type   = 'two-leg',
-                tradingsymbol  = near_futures,
-                exchange       = 'NFO',
-                trigger_values = [
-                    short_stop_loss_trigger,
-                    short_target_trigger
-                ],
-                last_price     = near_futures_ltp,
-                orders         = [
-                    # Stop loss order
-                    {
-                        "transaction_type": 'BUY',
-                        "quantity": int(futures[0]['lot_size']),
-                        "price": short_stop_loss_trigger,  # 0 for market order
-                        "order_type": "LIMIT",
-                        "product": "NRML"
-                    },
-                    # Target order
-                    {
-                        "transaction_type": 'BUY',
-                        "quantity": int(futures[0]['lot_size']),
-                        "price": short_target_trigger,  # 0 for market order
-                        "order_type": "LIMIT",
-                        "product": "NRML"
-                    }
-                ]
-            )
+                # Placing GTT OCO
+                short_gtt_order_id = kite.place_gtt(
+                    trigger_type   = 'two-leg',
+                    tradingsymbol  = near_futures,
+                    exchange       = 'NFO',
+                    trigger_values = [
+                        short_stop_loss_trigger,
+                        short_target_trigger
+                    ],
+                    last_price     = near_futures_ltp,
+                    orders         = [
+                        # Stop loss order
+                        {
+                            "transaction_type": 'BUY',
+                            "quantity": int(futures[0]['lot_size']),
+                            "price": short_stop_loss_trigger,  # 0 for market order
+                            "order_type": "LIMIT",
+                            "product": "NRML"
+                        },
+                        # Target order
+                        {
+                            "transaction_type": 'BUY',
+                            "quantity": int(futures[0]['lot_size']),
+                            "price": short_target_trigger,  # 0 for market order
+                            "order_type": "LIMIT",
+                            "product": "NRML"
+                        }
+                    ]
+                )
 
         # Check if any GTT order was triggered and reset transaction_type if needed
         if transaction_type is not None:
@@ -258,10 +288,5 @@ while testing == 0:
 
     # print("Sleeping for 15 seconds")
     time.sleep(15)
-    last_run_minute = current_minute
-
-    # Checking the overall market close time
-    if datetime.now().time() >= datetime.time(datetime.strptime("15:30", "%H:%M")):
-        # print("Market is closed")
-        break
+    last_run_minute = current_minute    
 

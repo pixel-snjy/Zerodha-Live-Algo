@@ -374,7 +374,7 @@ def get_instrument_token(exchange: str, ticker: str) -> Optional[int]:
         print(f"❌ Error getting token for {ticker}: {str(e)}")
         return None
 
-def get_futures_list(underlying_name):
+def get_futures_list(underlying_name, instrument_file):
     """
     Get a list of all available futures contracts for the given underlying name.
 
@@ -387,17 +387,17 @@ def get_futures_list(underlying_name):
     """
     try:
         # Read the instrument file using Polars
-        try:
-            df = pl.scan_csv('src/Dependencies/tradeable_instruments.csv')
-        except Exception as e:
-            print(f"❌ Error reading instrument file: {str(e)}")
-            return None
+        # try:
+        #     df = pl.scan_csv('src/Dependencies/tradeable_instruments.csv')
+        # except Exception as e:
+        #     print(f"❌ Error reading instrument file: {str(e)}")
+        #     return None
         
         # Convert to uppercase for case-insensitive comparison
         underlying_upper = underlying_name.upper()
         
         # Filter for futures contracts of the given underlying
-        futures = (df
+        futures = (instrument_file
             .filter(
                 (pl.col("instrument_type") == "FUT") &
                 (pl.col("name").str.to_uppercase() == underlying_upper)
@@ -421,6 +421,34 @@ def get_futures_list(underlying_name):
         
         # Convert to list of dictionaries
         return futures.to_dicts()
+        
+    except FileNotFoundError:
+        print("❌ Instrument list file not found at 'Dependencies/tradeable_instruments.csv'")
+        return None
+    except Exception as e:
+        print(f"❌ Error fetching futures list: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+    
+def get_options_list(underlying_name, instrument_file, strike):
+    pass
+    try:        
+        # Convert to uppercase for case-insensitive comparison
+        underlying_upper = underlying_name.upper()
+
+        # Filter for options contracts of the given underlying
+        options = (instrument_file
+            .filter(
+                (pl.col("strike") == strike) &
+                (pl.col("name").str.to_uppercase() == underlying_upper)
+            )
+            .collect()
+        )
+
+        if options.is_empty():
+            print(f"❌ No options contracts found for {underlying_name}")
+            return None
         
     except FileNotFoundError:
         print("❌ Instrument list file not found at 'Dependencies/tradeable_instruments.csv'")

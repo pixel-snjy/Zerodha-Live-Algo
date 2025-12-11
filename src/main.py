@@ -44,8 +44,8 @@ except Exception as e:
 
 
 ##### loading instrument file #####
-# instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
-instrument_file_pl = pl.scan_csv(deps_dir / 'tradeable_instruments.csv')
+instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
+# instrument_file_pl = pl.scan_csv(deps_dir / 'tradeable_instruments.csv')
 
 
 ##### Static variables #####
@@ -124,16 +124,20 @@ while True:
         st2_ha_direction = st2_ha.iloc[-2, 1]
         selling_strike = int(round(stop_loss, -2))
 
-        # Calling Futures
-        options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file_pl, strike=selling_strike)
+        # Calling Options
+        # options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract='PE')
 
         # Near Future & it's LTP fetched
-        near_futures = futures[0]['tradingsymbol']
-        near_futures_ltp = kite.ltp(futures[0]['instrument_token'])[str(futures[0]['instrument_token'])]['last_price']
+        # near_futures = futures[0]['tradingsymbol']
+        # opt_sell = options[0]['tradingsymbol']
+        # opt_sell_token = str(options[0]['instrument_token'])
+
+
+        # opt_sell_ltp = kite.ltp(opt_sell_token)[opt_sell_token]['last_price']
 
         # Next Future & it's LTP fetched
-        next_futures = futures[1]['tradingsymbol']
-        next_futures_ltp = kite.ltp(futures[1]['instrument_token'])[str(futures[1]['instrument_token'])]['last_price']
+        # next_futures = futures[1]['tradingsymbol']
+        # next_futures_ltp = kite.ltp(futures[1]['instrument_token'])[str(futures[1]['instrument_token'])]['last_price']
 
         # Collecting data for Long Condition
         bc1 = st1_ha_direction == 1
@@ -147,10 +151,16 @@ while True:
 
         # Checking Long Condition
         if bc1 and bc2 and bc3:
+            contract               = 'PE'
             transaction_type       = "BUY"
             long_stop_loss_trigger = stop_loss
             risk_amount = near_futures_ltp - stop_loss
-            long_target_trigger = round(near_futures_ltp + (risk_amount.round(2) * 3), 1)  # 1:3 risk-reward ratio
+            # long_target_trigger = round(near_futures_ltp + (risk_amount.round(2) * 3), 1)  # 1:3 risk-reward ratio
+            options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
+
+            opt_sell_token = str(options[0]['instrument_token'])
+
+            opt_sell_ltp = kite.ltp(opt_sell_token)[opt_sell_token]['last_price']
 
             # Sending Telegram update
             telegram_message = (
@@ -206,10 +216,12 @@ while True:
 
         # Checking Short Condition
         elif sc1 and sc2 and sc3:
+            contract                = "CE"
             transaction_type        = "SELL"
             short_stop_loss_trigger = stop_loss
             risk_amount = near_futures_ltp - stop_loss
             short_target_trigger = round(near_futures_ltp - (risk_amount * 3), 2)  # 1:3 risk-reward ratio
+            options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
 
             # Sending Telegram update
             telegram_message = (

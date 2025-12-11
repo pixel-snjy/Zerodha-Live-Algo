@@ -33,5 +33,4 @@ txaio==25.9.2
 typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.5.0
-xlwings==0.33.15
 zope.interface==8.0.1

@@ -431,30 +431,37 @@ def get_futures_list(underlying_name, instrument_file):
         traceback.print_exc()
         return None
     
-def get_options_list(underlying_name, instrument_file, strike):
-    pass
-    try:        
-        # Convert to uppercase for case-insensitive comparison
-        underlying_upper = underlying_name.upper()
+def get_options_list(underlying_name, instrument_file, strike, contract):
+    options = instrument_file[
+    (instrument_file['name'] == underlying_name) &
+    (instrument_file['strike'] == strike) &
+    # (instrument_file['expiry'] == "2025-12-30") &
+    (instrument_file['instrument_type'] == contract)
+    ]
 
-        # Filter for options contracts of the given underlying
-        options = (instrument_file
-            .filter(
-                (pl.col("strike") == strike) &
-                (pl.col("name").str.to_uppercase() == underlying_upper)
-            )
-            .collect()
-        )
+    pd_dates = pd.to_datetime(options['expiry'].to_list())
+    now = pd.Timestamp.today()
+    next_month_dt = now + pd.DateOffset(months=1)
 
-        if options.is_empty():
-            print(f"❌ No options contracts found for {underlying_name}")
-            return None
-        
-    except FileNotFoundError:
-        print("❌ Instrument list file not found at 'Dependencies/tradeable_instruments.csv'")
-        return None
-    except Exception as e:
-        print(f"❌ Error fetching futures list: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
+    # Current month expiry
+    cur_mask = (pd_dates.year == now.year) & (pd_dates.month == now.month)
+    cur_month_expiry = pd_dates[cur_mask].max() if cur_mask.any() else None
+
+    # Determine selected expiry based on days remaining
+    if cur_month_expiry and (cur_month_expiry - now).days < 7:
+        # Use next month
+        next_mask = (pd_dates.year == next_month_dt.year) & (pd_dates.month == next_month_dt.month)
+        selected_expiry = pd_dates[next_mask].max().date().isoformat() if next_mask.any() else None
+    else:
+        # Use current month
+        selected_expiry = cur_month_expiry.date().isoformat() if cur_month_expiry else None
+
+    # Filter and get results
+    options = instrument_file[
+        (instrument_file['expiry'] == selected_expiry) &
+        (instrument_file['name'] == underlying_name) &
+        (instrument_file['strike'] == strike) &
+        (instrument_file['instrument_type'] == contract)
+    ].reset_index(drop=True)
+
+    return options.to_dict(orient='records')

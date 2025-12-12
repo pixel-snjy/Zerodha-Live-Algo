@@ -3,6 +3,7 @@ import time
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 from typing import cast, Dict, Any
+import mibian
 
 import pandas as pd
 import polars as pl

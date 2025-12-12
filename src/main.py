@@ -103,7 +103,7 @@ while True:
         nifty_index = 256265
         # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
         #                                  to_date=current_date)
-        chart_5m = kite.historical_data(instrument_token=256265, interval="5minute", from_date=for_5m_data,
+        chart_5m = kite.historical_data(instrument_token=nifty_index, interval="5minute", from_date=for_5m_data,
                                         to_date=current_date)
 
         # chart = kite
@@ -154,7 +154,7 @@ while True:
             contract               = 'PE'
             transaction_type       = "BUY"
             long_stop_loss_trigger = stop_loss
-            risk_amount = near_futures_ltp - stop_loss
+            # risk_amount = near_futures_ltp - stop_loss
             # long_target_trigger = round(near_futures_ltp + (risk_amount.round(2) * 3), 1)  # 1:3 risk-reward ratio
             options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
 

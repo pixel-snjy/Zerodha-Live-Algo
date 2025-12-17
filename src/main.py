@@ -2,9 +2,9 @@ import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+# from typing import cast, Dict, Any
 
 import pandas as pd
-import polars as pl
 import pandas_ta as pta
 from kiteconnect import KiteConnect
 
@@ -24,6 +24,8 @@ api_secret = data["zerodha_api_secret"]
 telegram_bot_token = data["telegram_bot_token"]
 personal_telegram_id = data["personal_telegram_id"]
 broadcast_telegram_id = data["group_telegram_id"]
+
+# interestRate = 5.27 # 91D T-Bill
 #-----------------------------------------------------------------------------------------------------------------------
 
 ##### Login flow #####
@@ -33,6 +35,7 @@ try:
     kite = KiteConnect(api_key)
     kite.set_access_token(access_token)
     kite.margins()
+    # kite.positions()
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
     functions.login(api_key, api_secret, telegram_bot_token, personal_telegram_id)
@@ -45,8 +48,6 @@ except Exception as e:
 
 ##### loading instrument file #####
 instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
-# instrument_file_pl = pl.scan_csv(deps_dir / 'tradeable_instruments.csv')
-
 
 ##### Static variables #####
 last_run_minute = None
@@ -100,7 +101,7 @@ while True:
         for_5m_data = current_date - timedelta(days=10)
 
         ##### Fetch Instrument #####
-        nifty_index = 256265
+        nifty_index = "256265"
         # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
         #                                  to_date=current_date)
         chart_5m = kite.historical_data(instrument_token=nifty_index, interval="5minute", from_date=for_5m_data,
@@ -122,22 +123,7 @@ while True:
         st1_ha_direction = st1_ha.iloc[-2, 1]
         stop_loss = st1_ha.iloc[-2, 0]
         st2_ha_direction = st2_ha.iloc[-2, 1]
-        selling_strike = int(round(stop_loss, -2))
-
-        # Calling Options
-        # options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract='PE')
-
-        # Near Future & it's LTP fetched
-        # near_futures = futures[0]['tradingsymbol']
-        # opt_sell = options[0]['tradingsymbol']
-        # opt_sell_token = str(options[0]['instrument_token'])
-
-
-        # opt_sell_ltp = kite.ltp(opt_sell_token)[opt_sell_token]['last_price']
-
-        # Next Future & it's LTP fetched
-        # next_futures = futures[1]['tradingsymbol']
-        # next_futures_ltp = kite.ltp(futures[1]['instrument_token'])[str(futures[1]['instrument_token'])]['last_price']
+        selling_strike = int(round(stop_loss, -2))  # pyright: ignore[reportCallIssue, reportArgumentType]
 
         # Collecting data for Long Condition
         bc1 = st1_ha_direction == 1
@@ -150,24 +136,34 @@ while True:
         sc3 = transaction_type is None
 
         # Checking Long Condition
-        if bc1 and bc2 and bc3:
+        # if bc1 and bc2 and bc3:
+        if True:
             contract               = 'PE'
-            transaction_type       = "BUY"
+            transaction_type       = "long"
             long_stop_loss_trigger = stop_loss
-            # risk_amount = near_futures_ltp - stop_loss
-            # long_target_trigger = round(near_futures_ltp + (risk_amount.round(2) * 3), 1)  # 1:3 risk-reward ratio
-            options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
+            underlying_ltp         = kite.ltp(nifty_index)
+            underlying_ltp         = underlying_ltp[nifty_index]['last_price'] # type: ignore
 
-            opt_sell_token = str(options[0]['instrument_token'])
+            opt_selling_id = functions.find_selling_strike_delta_based(
+                underlying_name  = 'NIFTY',
+                instrument_file  = instrument_file,
+                initial_strike   = selling_strike,
+                contract         = contract,
+                underlying_price = underlying_ltp,
+                kite             = kite
+            )
+            selling_id = opt_selling_id[0] # type: ignore
+            trading_symbol = opt_selling_id[1] # type: ignore
 
-            opt_sell_ltp = kite.ltp(opt_sell_token)[opt_sell_token]['last_price']
+            opt_ltp = kite.ltp(selling_id)
+            opt_ltp = opt_ltp[selling_id]['last_price'] # type: ignore
 
             # Sending Telegram update
             telegram_message = (
                 "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
-                f"{transaction_type} | {near_futures} @ {near_futures_ltp}\n"
+                f"{transaction_type} | {trading_symbol} @ {opt_ltp}\n"
                 f"with an Stop-loss @ {long_stop_loss_trigger}\n"
-                f"with an Target @ {long_target_trigger}"
+                # f"with an Target @ {long_target_trigger}"
             )
             functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
@@ -218,9 +214,9 @@ while True:
         elif sc1 and sc2 and sc3:
             contract                = "CE"
             transaction_type        = "SELL"
-            short_stop_loss_trigger = stop_loss
-            risk_amount = near_futures_ltp - stop_loss
-            short_target_trigger = round(near_futures_ltp - (risk_amount * 3), 2)  # 1:3 risk-reward ratio
+            # short_stop_loss_trigger = stop_loss
+            # risk_amount = near_futures_ltp - stop_loss
+            # short_target_trigger = round(near_futures_ltp - (risk_amount * 3), 2)  # 1:3 risk-reward ratio
             options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
 
             # Sending Telegram update

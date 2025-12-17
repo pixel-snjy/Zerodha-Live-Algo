@@ -1,8 +1,7 @@
 from pathlib import Path
 import time
-from typing import Optional, Dict, Any
+from typing import cast, Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
-from typing import cast, Dict, Any
 import mibian
 
 import pandas as pd
@@ -431,16 +430,15 @@ def get_futures_list(underlying_name, instrument_file):
         import traceback
         traceback.print_exc()
         return None
-    
-def get_options_list(underlying_name, instrument_file, strike, contract):
+
+def find_selling_strike_delta_based(underlying_name, instrument_file, initial_strike, contract, underlying_price, kite):
+    interestRate = 5.27         # 91D T-Bill yield govt. bond
     options = instrument_file[
-    (instrument_file['name'] == underlying_name) &
-    (instrument_file['strike'] == strike) &
-    # (instrument_file['expiry'] == "2025-12-30") &
-    (instrument_file['instrument_type'] == contract)
+        (instrument_file['name'] == underlying_name) &
+        (instrument_file['instrument_type'] == contract)
     ]
 
-    pd_dates = pd.to_datetime(options['expiry'].to_list())
+    pd_dates = pd.to_datetime(options['expiry'].to_list()).unique()
     now = pd.Timestamp.today()
     next_month_dt = now + pd.DateOffset(months=1)
 
@@ -457,12 +455,49 @@ def get_options_list(underlying_name, instrument_file, strike, contract):
         # Use current month
         selected_expiry = cur_month_expiry.date().isoformat() if cur_month_expiry else None
 
-    # Filter and get results
-    options = instrument_file[
-        (instrument_file['expiry'] == selected_expiry) &
-        (instrument_file['name'] == underlying_name) &
-        (instrument_file['strike'] == strike) &
-        (instrument_file['instrument_type'] == contract)
-    ].reset_index(drop=True)
+    days_to_expire = (cur_month_expiry - now).days + 1 # type: ignore
 
-    return options.to_dict(orient='records')
+    if contract == "CE":
+        strike_range = range(initial_strike, initial_strike + (100 * 15), 100)
+    else:
+        strike_range = range(initial_strike, initial_strike - (100 * 15), -100)
+    tokens = []
+    strike_map = {}
+    
+    for strike in strike_range:
+        strike_options = instrument_file[
+            (instrument_file['expiry'] == selected_expiry) &
+            (instrument_file['name'] == underlying_name) &
+            (instrument_file['strike'] == strike) &
+            (instrument_file['instrument_type'] == contract)
+        ].reset_index(drop=True)
+        if not strike_options.empty:
+            token = str(strike_options['instrument_token'][0])
+            tokens.append(token)
+            strike_map[token] = (strike, strike_options['tradingsymbol'][0])
+
+    ltp_data = kite.ltp(tokens)
+
+    for token, strike in strike_map.items():
+        strike_ltp = ltp_data[token]['last_price']
+        trading_symbol = strike[1]
+        bs_params = [underlying_price, strike[0], interestRate, days_to_expire]
+        # c = None
+        if contract == 'CE':
+            c = mibian.BS(bs_params, callPrice=strike_ltp)
+        elif contract == 'PE':
+            c = mibian.BS(bs_params, putPrice=strike_ltp)
+        IV = c.impliedVolatility
+        delta = mibian.BS(bs_params, volatility=IV)
+        if contract == 'CE':
+            delta = delta.callDelta * 100
+        elif contract == 'PE':
+            delta = delta.putDelta * 100
+        delta = abs(delta)
+        if delta < 36:
+            return token, trading_symbol
+
+def get_options_delta(interestRate, daysToExpiration, underlyingPrice, strikePrice, last_price):
+    # c = mibian.BS([underlyingPrice, strikePrice, interestRate, daysToExpiration], putPrice=last_price)
+    # callIV = c.impliedVolatility
+    pass

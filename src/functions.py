@@ -431,7 +431,7 @@ def get_futures_list(underlying_name, instrument_file):
         traceback.print_exc()
         return None
 
-def find_selling_strike_delta_based(underlying_name, instrument_file, initial_strike, contract, underlying_price, kite):
+def finding_strike_delta_based(underlying_name, instrument_file, initial_strike, contract, underlying_price, kite, delta_):
     interestRate = 5.27         # 91D T-Bill yield govt. bond
     options = instrument_file[
         (instrument_file['name'] == underlying_name) &
@@ -474,13 +474,14 @@ def find_selling_strike_delta_based(underlying_name, instrument_file, initial_st
         if not strike_options.empty:
             token = str(strike_options['instrument_token'][0])
             tokens.append(token)
-            strike_map[token] = (strike, strike_options['tradingsymbol'][0])
+            strike_map[token] = (strike, strike_options['tradingsymbol'][0], strike_options['lot_size'][0])
 
     ltp_data = kite.ltp(tokens)
 
     for token, strike in strike_map.items():
         strike_ltp = ltp_data[token]['last_price']
         trading_symbol = strike[1]
+        lot_size = int(strike[2])
         bs_params = [underlying_price, strike[0], interestRate, days_to_expire]
         # c = None
         if contract == 'CE':
@@ -494,8 +495,8 @@ def find_selling_strike_delta_based(underlying_name, instrument_file, initial_st
         elif contract == 'PE':
             delta = delta.putDelta * 100
         delta = abs(delta)
-        if delta < 36:
-            return token, trading_symbol
+        if delta < delta_:
+            return token, trading_symbol, lot_size, strike_ltp
 
 def get_options_delta(interestRate, daysToExpiration, underlyingPrice, strikePrice, last_price):
     # c = mibian.BS([underlyingPrice, strikePrice, interestRate, daysToExpiration], putPrice=last_price)

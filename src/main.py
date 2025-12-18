@@ -55,7 +55,7 @@ transaction_type = None
 
 # 1 means yes && 0 means no
 testing = 1
-punch_order = 0
+punch_order = 1
 
 now = datetime.now()
 now_time = now.time()
@@ -138,32 +138,170 @@ while True:
         # Checking Long Condition
         # if bc1 and bc2 and bc3:
         if True:
-            contract               = 'PE'
-            transaction_type       = "long"
-            long_stop_loss_trigger = stop_loss
-            underlying_ltp         = kite.ltp(nifty_index)
-            underlying_ltp         = underlying_ltp[nifty_index]['last_price'] # type: ignore
+            contract                         = 'PE'
+            transaction_type                 = "long"
+            underlying_ltp                   = kite.ltp(nifty_index)
+            underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
 
-            opt_selling_id = functions.find_selling_strike_delta_based(
-                underlying_name  = 'NIFTY',
-                instrument_file  = instrument_file,
-                initial_strike   = selling_strike,
-                contract         = contract,
-                underlying_price = underlying_ltp,
-                kite             = kite
+            opt_hedging_id = functions.finding_strike_delta_based(
+                underlying_name              = 'NIFTY',
+                instrument_file              = instrument_file,
+                initial_strike               = selling_strike,
+                contract                     = contract,
+                underlying_price             = underlying_ltp,
+                kite                         = kite,
+                delta_                       = 10
             )
-            selling_id = opt_selling_id[0] # type: ignore
-            trading_symbol = opt_selling_id[1] # type: ignore
 
-            opt_ltp = kite.ltp(selling_id)
-            opt_ltp = opt_ltp[selling_id]['last_price'] # type: ignore
+            hedgig_id                        = opt_hedging_id[0] # type: ignore
+            hedging_strike_trading_symbol    = opt_hedging_id[1] # type: ignore
+            hedging_strike_lot_size          = opt_hedging_id[2] # type: ignore
+            hedging_strike_price             = opt_hedging_id[3] # type: ignore
+
+            if punch_order == 1:
+                # Placing Order
+                hedge_order_id = kite.place_order(
+                    variety            = order_variety,
+                    exchange           = "NFO",
+                    tradingsymbol      = hedging_strike_trading_symbol,
+                    transaction_type   = "BUY",
+                    quantity           = hedging_strike_lot_size,
+                    product            = "NRML",
+                    order_type         = "LIMIT",
+                    price              = hedging_strike_price
+                )
+                # return hedge_order_id
+
+            order_status = None
+            # while order_status != 'AMO REQ RECEIVED':
+            while order_status != 'COMPLETED':
+                orders = kite.orders()
+                # for order in orders:
+                for order in range(len(orders)):
+                    order_id = orders[order]['order_id']
+                    if order_id == hedge_order_id:
+                        order_status = orders[order]['status']
+                        time.sleep(1)
+
+            opt_selling_id = functions.finding_strike_delta_based(
+                underlying_name              = 'NIFTY',
+                instrument_file              = instrument_file,
+                initial_strike               = selling_strike,
+                contract                     = contract,
+                underlying_price             = underlying_ltp,
+                kite                         = kite,
+                delta_                       = 35
+            )
+
+            selling_id                       = opt_selling_id[0] # type: ignore
+            selling_strike_trading_symbol    = opt_selling_id[1] # type: ignore
+            selling_strike_lot_size          = opt_selling_id[2] # type: ignore
+            selling_strike_price             = opt_selling_id[3] # type: ignore
 
             # Sending Telegram update
             telegram_message = (
                 "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
-                f"{transaction_type} | {trading_symbol} @ {opt_ltp}\n"
-                f"with an Stop-loss @ {long_stop_loss_trigger}\n"
-                # f"with an Target @ {long_target_trigger}"
+                f"{transaction_type} | Selling {selling_strike_trading_symbol} @ {selling_strike_price}\n"
+                f"with Hedge {hedging_strike_trading_symbol} @ {hedging_strike_price}\n"
+            )
+            functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
+
+            if punch_order == 1:
+                # Placing Order
+                sell_order_id = kite.place_order(
+                    variety            = order_variety,
+                    exchange           = "NFO",
+                    tradingsymbol      = selling_strike_trading_symbol,
+                    transaction_type   = "SELL",
+                    quantity           = selling_strike_lot_size,
+                    product            = "NRML",
+                    order_type         = "LIMIT",
+                    price              = selling_strike_price
+                )
+            
+            order_status = None
+            # while order_status != 'AMO REQ RECEIVED':
+            while order_status != 'COMPLETED':
+                orders = kite.orders()
+                # for order in orders:
+                for order in range(len(orders)):
+                    order_id = orders[order]['order_id']
+                    if order_id == sell_order_id:
+                        order_status = orders[order]['status']
+                        time.sleep(1)
+
+                # Placing GTT OCO
+                # long_gtt_order_id  = kite.place_gtt(
+                #     trigger_type   = 'two-leg',
+                #     tradingsymbol  = near_futures,
+                #     exchange       = 'NFO',
+                #     trigger_values = [
+                #         long_stop_loss_trigger,
+                #         long_target_trigger
+                #     ],
+                #     last_price     = near_futures_ltp,
+                #     orders         = [
+                #         # Stop loss order
+                #         {
+                #             "transaction_type": 'SELL',
+                #             "quantity": int(futures[0]['lot_size']),
+                #             "price": long_stop_loss_trigger,  # 0 for market order
+                #             "order_type": "LIMIT",
+                #             "product": "NRML"
+                #         },
+                #         # Target order
+                #         {
+                #             "transaction_type": 'SELL',
+                #             "quantity": int(futures[0]['lot_size']),
+                #             "price": long_target_trigger,  # 0 for market order
+                #             "order_type": "LIMIT",
+                #             "product": "NRML"
+                #         }
+                #     ]
+                # )
+
+        # Checking Short Condition
+        elif sc1 and sc2 and sc3:
+            contract                = "CE"
+            transaction_type        = "SELL"
+            underlying_ltp                   = kite.ltp(nifty_index)
+            underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
+
+            opt_hedging_id = functions.finding_strike_delta_based(
+                underlying_name              = 'NIFTY',
+                instrument_file              = instrument_file,
+                initial_strike               = selling_strike,
+                contract                     = contract,
+                underlying_price             = underlying_ltp,
+                kite                         = kite,
+                delta_                       = 10
+            )
+
+            hedgig_id                        = opt_hedging_id[0] # type: ignore
+            hedging_strike_trading_symbol    = opt_hedging_id[1] # type: ignore
+            hedging_strike_lot_size          = opt_hedging_id[2] # type: ignore
+            hedging_strike_price             = opt_hedging_id[3] # type: ignore
+
+            opt_selling_id = functions.finding_strike_delta_based(
+                underlying_name              = 'NIFTY',
+                instrument_file              = instrument_file,
+                initial_strike               = selling_strike,
+                contract                     = contract,
+                underlying_price             = underlying_ltp,
+                kite                         = kite,
+                delta_                       = 35
+            )
+
+            selling_id                       = opt_selling_id[0] # type: ignore
+            selling_strike_trading_symbol    = opt_selling_id[1] # type: ignore
+            selling_strike_lot_size          = opt_selling_id[2] # type: ignore
+            selling_strike_price             = opt_selling_id[3] # type: ignore
+
+            # Sending Telegram update
+            telegram_message = (
+                "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
+                f"{transaction_type} | Selling {selling_strike_trading_symbol} @ {selling_strike_price}\n"
+                f"with Hedge {hedging_strike_trading_symbol} @ {hedging_strike_price}\n"
             )
             functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
@@ -172,125 +310,64 @@ while True:
                 order_id = kite.place_order(
                     variety            = order_variety,
                     exchange           = "NFO",
-                    tradingsymbol      = near_futures,
-                    transaction_type   = transaction_type,
-                    quantity           = int(futures[0]['lot_size']),
+                    tradingsymbol      = selling_strike_trading_symbol,
+                    transaction_type   = "SELL",
+                    quantity           = selling_strike_lot_size,
                     product            = "NRML",
                     order_type         = "LIMIT",
-                    price              = near_futures_ltp
+                    price              = selling_strike_price
                 )
 
                 # Placing GTT OCO
-                long_gtt_order_id  = kite.place_gtt(
-                    trigger_type   = 'two-leg',
-                    tradingsymbol  = near_futures,
-                    exchange       = 'NFO',
-                    trigger_values = [
-                        long_stop_loss_trigger,
-                        long_target_trigger
-                    ],
-                    last_price     = near_futures_ltp,
-                    orders         = [
-                        # Stop loss order
-                        {
-                            "transaction_type": 'SELL',
-                            "quantity": int(futures[0]['lot_size']),
-                            "price": long_stop_loss_trigger,  # 0 for market order
-                            "order_type": "LIMIT",
-                            "product": "NRML"
-                        },
-                        # Target order
-                        {
-                            "transaction_type": 'SELL',
-                            "quantity": int(futures[0]['lot_size']),
-                            "price": long_target_trigger,  # 0 for market order
-                            "order_type": "LIMIT",
-                            "product": "NRML"
-                        }
-                    ]
-                )
-
-        # Checking Short Condition
-        elif sc1 and sc2 and sc3:
-            contract                = "CE"
-            transaction_type        = "SELL"
-            # short_stop_loss_trigger = stop_loss
-            # risk_amount = near_futures_ltp - stop_loss
-            # short_target_trigger = round(near_futures_ltp - (risk_amount * 3), 2)  # 1:3 risk-reward ratio
-            options = functions.get_options_list(underlying_name='NIFTY', instrument_file=instrument_file, strike=selling_strike, contract=contract)
-
-            # Sending Telegram update
-            telegram_message = (
-                "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
-                f"{transaction_type} | {near_futures} @ {near_futures_ltp}\n"
-                f"with an Stop-loss @ {short_stop_loss_trigger}\n"
-                f"with an Target @ {short_target_trigger}"
-            )
-            functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
-
-            if punch_order == 1:
-                # Place Order
-                order_id = kite.place_order(
-                    variety              = order_variety,
-                    exchange             = "NFO",
-                    tradingsymbol        = near_futures,
-                    transaction_type     = transaction_type,
-                    quantity             = futures[0]['lot_size'],
-                    product              = "NRML",
-                    order_type           = "LIMIT",
-                    price                = near_futures_ltp
-                )
-
-                # Placing GTT OCO
-                short_gtt_order_id = kite.place_gtt(
-                    trigger_type   = 'two-leg',
-                    tradingsymbol  = near_futures,
-                    exchange       = 'NFO',
-                    trigger_values = [
-                        short_stop_loss_trigger,
-                        short_target_trigger
-                    ],
-                    last_price     = near_futures_ltp,
-                    orders         = [
-                        # Stop loss order
-                        {
-                            "transaction_type": 'BUY',
-                            "quantity": int(futures[0]['lot_size']),
-                            "price": short_stop_loss_trigger,  # 0 for market order
-                            "order_type": "LIMIT",
-                            "product": "NRML"
-                        },
-                        # Target order
-                        {
-                            "transaction_type": 'BUY',
-                            "quantity": int(futures[0]['lot_size']),
-                            "price": short_target_trigger,  # 0 for market order
-                            "order_type": "LIMIT",
-                            "product": "NRML"
-                        }
-                    ]
-                )
+                # short_gtt_order_id = kite.place_gtt(
+                #     trigger_type   = 'two-leg',
+                #     tradingsymbol  = near_futures,
+                #     exchange       = 'NFO',
+                #     trigger_values = [
+                #         short_stop_loss_trigger,
+                #         short_target_trigger
+                #     ],
+                #     last_price     = near_futures_ltp,
+                #     orders         = [
+                #         # Stop loss order
+                #         {
+                #             "transaction_type": 'BUY',
+                #             "quantity": int(futures[0]['lot_size']),
+                #             "price": short_stop_loss_trigger,  # 0 for market order
+                #             "order_type": "LIMIT",
+                #             "product": "NRML"
+                #         },
+                #         # Target order
+                #         {
+                #             "transaction_type": 'BUY',
+                #             "quantity": int(futures[0]['lot_size']),
+                #             "price": short_target_trigger,  # 0 for market order
+                #             "order_type": "LIMIT",
+                #             "product": "NRML"
+                #         }
+                #     ]
+                # )
 
         # Check if any GTT order was triggered and reset transaction_type if needed
-        if transaction_type is not None:
-            try:
-                # Get all active GTTs
-                active_gtts = kite.get_gtts()
+        # if transaction_type is not None:
+        #     try:
+        #         # Get all active GTTs
+        #         active_gtts = kite.get_gtts()
                 
-                # Check if our GTT is still active
-                # noinspection PyUnboundLocalVariable
-                current_gtt_id = long_gtt_order_id['trigger_id'] if transaction_type == 'BUY' else short_gtt_order_id['trigger_id']
-                gtt_active = any(gtt['id'] == current_gtt_id for gtt in active_gtts)
+        #         # Check if our GTT is still active
+        #         # noinspection PyUnboundLocalVariable
+        #         current_gtt_id = long_gtt_order_id['trigger_id'] if transaction_type == 'BUY' else short_gtt_order_id['trigger_id']
+        #         gtt_active = any(gtt['id'] == current_gtt_id for gtt in active_gtts)
                 
-                if not gtt_active:
-                    # GTT was triggered, reset transaction_type
-                    print(f"GTT order {current_gtt_id} was triggered. Resetting transaction_type.")
-                    transaction_type = None
+        #         if not gtt_active:
+        #             # GTT was triggered, reset transaction_type
+        #             print(f"GTT order {current_gtt_id} was triggered. Resetting transaction_type.")
+        #             transaction_type = None
                     
-            except Exception as e:
-                print(f"Error checking GTT status: {e}")
-                # In case of any error, we'll check again in the next iteration
-                pass
+        #     except Exception as e:
+        #         print(f"Error checking GTT status: {e}")
+        #         # In case of any error, we'll check again in the next iteration
+        #         pass
 
 
 

@@ -483,12 +483,14 @@ def finding_strike_delta_based(underlying_name, instrument_file, initial_strike,
         trading_symbol = strike[1]
         lot_size = int(strike[2])
         bs_params = [underlying_price, strike[0], interestRate, days_to_expire]
-        # c = None
+        c = None
+        IV = None
         if contract == 'CE':
             c = mibian.BS(bs_params, callPrice=strike_ltp)
         elif contract == 'PE':
             c = mibian.BS(bs_params, putPrice=strike_ltp)
-        IV = c.impliedVolatility
+        if c is not None:
+            IV = c.impliedVolatility
         delta = mibian.BS(bs_params, volatility=IV)
         if contract == 'CE':
             delta = delta.callDelta * 100
@@ -497,8 +499,3 @@ def finding_strike_delta_based(underlying_name, instrument_file, initial_strike,
         delta = abs(delta)
         if delta < delta_:
             return token, trading_symbol, lot_size, strike_ltp
-
-def get_options_delta(interestRate, daysToExpiration, underlyingPrice, strikePrice, last_price):
-    # c = mibian.BS([underlyingPrice, strikePrice, interestRate, daysToExpiration], putPrice=last_price)
-    # callIV = c.impliedVolatility
-    pass

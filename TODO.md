@@ -16,9 +16,9 @@ CPR - Pivot Boss trades:
   3. ~~cpr breadth calculation for sideways or trending session.~~
   4. L3 and below are buyer zones && R3 and above are seller zones.
   5. define initial balance concept too.
-    a. here take 1 hour data of the day.
-    b. mark the high & low from this data.
-    c. select the strikes nearest to these high low.
+    a. ~~here take 1 hour data of the day.~~
+    b. ~~mark the high & low from this data.~~
+    c. ~~select the strikes nearest to these high low.~~
     d. define the prices from these strikes where are they.
     e. are they below pivot or beyond pivot.
     f. if ce is beyond pivot and pe is below pivot then initial balance is positive else vice-verse.
@@ -27,8 +27,8 @@ CPR - Pivot Boss trades:
 
 Stock Selling Concept:
   8. Initial balnce concept for stock selling::
-    a. check sensex & nifty high
-    b. friday-monday-tuesday check nifty only, wednesday-thursday check sensex only.
+    a. ~~check sensex & nifty high~~
+    b. ~~friday-monday-tuesday check nifty only, wednesday-thursday check sensex only.~~
     c. according to high fetch PE contract and check whether it's closing above 'R4' @ 10:15AM
     d. if it met the given condition then fetch those stocks from the cnx500 who breaks the support with resistance touch.
     e. then sort them according to S1-S4.
@@ -54,7 +54,7 @@ Following is the framework and logical approach for your script, structured arou
 ### **Step 2: The Forecasting Phase (Pre-Market Analysis)**
 Before the market opens, the script should analyze the relationship between today’s pivots and yesterday’s price action to determine a **Directional Bias**.
 *   ~~**Pivot Width Analysis:** Compare the width of the CPR or Value Area. **Narrow pivots** should flag a "Trend Day" forecast, while **wide pivots** flag a "Sideways/Trading Range" forecast.~~
-*   **Two-Day Relationships:** Determine if the current pivots are **Higher, Lower, Overlapping, or Inside** the previous day’s pivots. For example, an **Inside Value** relationship combined with narrow pivots is a high-conviction signal for an explosive breakout.
+*   ~~**Two-Day Relationships:** Determine if the current pivots are **Higher, Lower, Overlapping, or Inside** the previous day’s pivots. For example, an **Inside Value** relationship combined with narrow pivots is a high-conviction signal for an explosive breakout.~~
 
 ### **Step 3: Opening Print Validation (Conviction Check)**
 Once the market opens, the script must compare the **Opening Price** to the calculated levels to see if the market "accepts" or "rejects" the forecast.

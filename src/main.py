@@ -1,6 +1,6 @@
 import json
-# import time
-from datetime import datetime, timedelta, time
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 import pyotp
 import os
@@ -120,7 +120,7 @@ for key in pivot_df:
         f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
         f"cpr breadth: {next_session_cpr_metric_df[key]}\n"
         f"two day value area relationship:\n*{two_day_relationship_df[key]}*\n\n"
-        "⚠️ still in experimental stage\n"
+        # "⚠️ still in experimental stage\n"
     )
 
     serverside_functions.send_telegram_message(
@@ -130,8 +130,9 @@ for key in pivot_df:
     )
 
 # 1 means yes && 0 means no
-testing = 1
+testing = 0
 punch_order = 0
+strategy_one = 0
 
 # logic to pause the script till 0930Hrs or desired time.
 now = datetime.now()
@@ -147,6 +148,8 @@ if testing == 0:
 
 is_market_live = True
 while is_market_live:
+    # constant update need
+    current_minute = datetime.now().minute
 
     # logic to tell user that market is open & logic starting to execute
     now_time = datetime.now().time()
@@ -159,13 +162,7 @@ while is_market_live:
 
     # logic to skip the order flow beyond market hours
     if testing == 0:
-        if now_time >= datetime.time(datetime.strptime("15:45", "%H:%M")):
-            # Send alert to Telegram
-            serverside_functions.send_telegram_message(
-                bot_token = telegram_bot_token,
-                chat_id   = personal_telegram_id,
-                text      = "Market is closed"
-                )
+        if now_time >= datetime.time(datetime.strptime("00:30", "%H:%M")):
             try:
                 os.remove(f"{deps_dir}/access_token.txt")
             except Exception as e:
@@ -176,9 +173,16 @@ while is_market_live:
                 )
             time.sleep(1)
             is_market_live = False
+        elif now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")):
+            # Send alert to Telegram
+            serverside_functions.send_telegram_message(
+                bot_token = telegram_bot_token,
+                chat_id   = personal_telegram_id,
+                text      = "Market is closed"
+                )
         
     # initial balance logic
-    if time(10, 15) <= datetime.now().time() < time(10, 30):
+    if datetime.time(datetime.strptime("10:15", "%H:%M")) <= datetime.now().time() < datetime.time(datetime.strptime("10:30", "%H:%M")):
     # if True:
         if current_date.weekday() == 4 or current_date.weekday() == 0 or current_date.weekday() == 1:
             token_id = watchlist['NIFTY']
@@ -203,19 +207,16 @@ while is_market_live:
     else:
         order_variety = 'regular'
 
-    current_minute = datetime.now().minute
     # if current_minute % 15 == 0 and last_run_minute != current_minute:
-    if True:
-        # print("Running logic")
+    if False:
         for_15m_data = current_date - timedelta(days=28)
-        # for_5m_data = current_date - timedelta(days=10)
 
         # Fetch Instrument 
         nifty_index = "256265"
-        nifty_futures = ""
+        # nifty_futures = ""
         # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
         #                                  to_date=current_date)
-        chart_5m = kite.historical_data(instrument_token=nifty_index, interval="15minute", from_date=for_15m_data,
+        chart_5m = kite.historical_data(instrument_token=watchlist['NIFTY'], interval="15minute", from_date=for_15m_data,
                                         to_date=current_date)
 
         # chart = kite
@@ -224,226 +225,227 @@ while is_market_live:
         ha_chart_df = serverside_functions.convert_heikin_ashi(chart_df).round(2)
         # -----------------------------------------------------------------------------------------------------------------------
 
-        # Strategy 1 ==>> Double SuperTrend for Directional Trade 
-        st1_ha = pta.supertrend(
-            high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=11, multiplier=1
-        ).round(2)
-        st2_ha = pta.supertrend(
-            high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=18, multiplier=2
-        ).round(2)
-        st1_ha_direction = st1_ha.iloc[-1, 1].item()
-        stop_loss = st1_ha.iloc[-1, 0].item()
-        st2_ha_direction = st2_ha.iloc[-1, 1].item()
-        prev_st2_ha_direction = st2_ha.iloc[-2, 1].item()
-        selling_strike = int(round(stop_loss, -2))
+        # Strategy 1 ==>> Double SuperTrend for Directional Trade
+        if strategy_one == 1:
+            st1_ha = pta.supertrend(
+                high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=11, multiplier=1
+            ).round(2)
+            st2_ha = pta.supertrend(
+                high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=18, multiplier=2
+            ).round(2)
+            st1_ha_direction = st1_ha.iloc[-1, 1].item()
+            stop_loss = st1_ha.iloc[-1, 0].item()
+            st2_ha_direction = st2_ha.iloc[-1, 1].item()
+            prev_st2_ha_direction = st2_ha.iloc[-2, 1].item()
+            selling_strike = int(round(stop_loss, -2))
 
-        # Collecting data for Long Condition
-        bc1 = st1_ha_direction == 1
-        bc2 = st2_ha_direction == 1
-        bc3 = getting is None
-        bc4 = prev_st2_ha_direction == -1
+            # Collecting data for Long Condition
+            bc1 = st1_ha_direction == 1
+            bc2 = st2_ha_direction == 1
+            bc3 = getting is None
+            bc4 = prev_st2_ha_direction == -1
 
-        # Collecting data for Short Condition
-        sc1 = st1_ha_direction == -1
-        sc2 = st2_ha_direction == -1
-        sc3 = getting is None
-        sc4 = prev_st2_ha_direction == 1
+            # Collecting data for Short Condition
+            sc1 = st1_ha_direction == -1
+            sc2 = st2_ha_direction == -1
+            sc3 = getting is None
+            sc4 = prev_st2_ha_direction == 1
 
-        # Checking Long Condition 
-        if bc1 and bc2 and bc3 and bc4:
-        # if True:
-            contract                         = 'PE'
-            getting                          = "long"
-            underlying_ltp                   = kite.ltp(nifty_index)
-            underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
+            # Checking Long Condition 
+            if bc1 and bc2 and bc3 and bc4:
+            # if True:
+                contract                         = 'PE'
+                getting                          = "long"
+                underlying_ltp                   = kite.ltp(nifty_index)
+                underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
 
-            # Executing Hedge first
-            pe_opt_hedge_id = serverside_functions.finding_strike_delta_based(
-                underlying_name              = 'NIFTY',
-                instrument_file              = instrument_file,
-                initial_strike               = selling_strike,
-                contract                     = contract,
-                underlying_price             = underlying_ltp,
-                kite                         = kite,
-                delta_                       = 10
-            )
-
-            hedgig_id                        = pe_opt_hedge_id[0] # type: ignore
-            hedging_strike_trading_symbol    = pe_opt_hedge_id[1] # type: ignore
-            hedging_strike_lot_size          = pe_opt_hedge_id[2] # type: ignore
-            hedging_strike_price             = pe_opt_hedge_id[3] # type: ignore
-
-            # pe_hedge_order_id = None
-            if punch_order == 1:
-                # Placing Order
-                pe_hedge_order_id = kite.place_order(
-                    variety            = order_variety,
-                    exchange           = "NFO",
-                    tradingsymbol      = hedging_strike_trading_symbol,
-                    transaction_type   = "BUY",
-                    quantity           = hedging_strike_lot_size,
-                    product            = "NRML",
-                    order_type         = "LIMIT",
-                    price              = hedging_strike_price
+                # Executing Hedge first
+                pe_opt_hedge_id = serverside_functions.finding_strike_delta_based(
+                    underlying_name              = 'NIFTY',
+                    instrument_file              = instrument_file,
+                    initial_strike               = selling_strike,
+                    contract                     = contract,
+                    underlying_price             = underlying_ltp,
+                    kite                         = kite,
+                    delta_                       = 10
                 )
 
-                order_status = None
-                while order_status != 'COMPLETE':
-                    orders = kite.orders()
-                    # for order in orders:
-                    for order in range(len(orders)):
-                        order_id = orders[order]['order_id']
-                        if order_id == pe_hedge_order_id:
-                            order_status = orders[order]['status']
-                            time.sleep(1)
+                hedgig_id                        = pe_opt_hedge_id[0] # type: ignore
+                hedging_strike_trading_symbol    = pe_opt_hedge_id[1] # type: ignore
+                hedging_strike_lot_size          = pe_opt_hedge_id[2] # type: ignore
+                hedging_strike_price             = pe_opt_hedge_id[3] # type: ignore
 
-            # executing sell order next
-            pe_opt_sell_id = serverside_functions.finding_strike_delta_based(
-                underlying_name              = 'NIFTY',
-                instrument_file              = instrument_file,
-                initial_strike               = selling_strike,
-                contract                     = contract,
-                underlying_price             = underlying_ltp,
-                kite                         = kite,
-                delta_                       = 35
-            )
+                # pe_hedge_order_id = None
+                if punch_order == 1:
+                    # Placing Order
+                    pe_hedge_order_id = kite.place_order(
+                        variety            = order_variety,
+                        exchange           = "NFO",
+                        tradingsymbol      = hedging_strike_trading_symbol,
+                        transaction_type   = "BUY",
+                        quantity           = hedging_strike_lot_size,
+                        product            = "NRML",
+                        order_type         = "LIMIT",
+                        price              = hedging_strike_price
+                    )
 
-            selling_id                       = pe_opt_sell_id[0] # type: ignore
-            selling_strike_trading_symbol    = pe_opt_sell_id[1] # type: ignore
-            selling_strike_lot_size          = pe_opt_sell_id[2] # type: ignore
-            selling_strike_price             = pe_opt_sell_id[3] # type: ignore
+                    order_status = None
+                    while order_status != 'COMPLETE':
+                        orders = kite.orders()
+                        # for order in orders:
+                        for order in range(len(orders)):
+                            order_id = orders[order]['order_id']
+                            if order_id == pe_hedge_order_id:
+                                order_status = orders[order]['status']
+                                time.sleep(1)
 
-            # pe_sell_order_id = None
-            if punch_order == 1:
-                # Placing Order
-                pe_sell_order_id = kite.place_order(
-                    variety            = order_variety,
-                    exchange           = "NFO",
-                    tradingsymbol      = selling_strike_trading_symbol,
-                    transaction_type   = "SELL",
-                    quantity           = selling_strike_lot_size,
-                    product            = "NRML",
-                    order_type         = "LIMIT",
-                    price              = selling_strike_price
+                # executing sell order next
+                pe_opt_sell_id = serverside_functions.finding_strike_delta_based(
+                    underlying_name              = 'NIFTY',
+                    instrument_file              = instrument_file,
+                    initial_strike               = selling_strike,
+                    contract                     = contract,
+                    underlying_price             = underlying_ltp,
+                    kite                         = kite,
+                    delta_                       = 35
                 )
 
-                order_status = None
-                while order_status != 'COMPLETE':
-                    orders = kite.orders()
-                    # for order in orders:
-                    for order in range(len(orders)):
-                        order_id = orders[order]['order_id']
-                        if order_id == pe_sell_order_id:
-                            order_status = orders[order]['status']
-                            time.sleep(1)
+                selling_id                       = pe_opt_sell_id[0] # type: ignore
+                selling_strike_trading_symbol    = pe_opt_sell_id[1] # type: ignore
+                selling_strike_lot_size          = pe_opt_sell_id[2] # type: ignore
+                selling_strike_price             = pe_opt_sell_id[3] # type: ignore
+
+                # pe_sell_order_id = None
+                if punch_order == 1:
+                    # Placing Order
+                    pe_sell_order_id = kite.place_order(
+                        variety            = order_variety,
+                        exchange           = "NFO",
+                        tradingsymbol      = selling_strike_trading_symbol,
+                        transaction_type   = "SELL",
+                        quantity           = selling_strike_lot_size,
+                        product            = "NRML",
+                        order_type         = "LIMIT",
+                        price              = selling_strike_price
+                    )
+
+                    order_status = None
+                    while order_status != 'COMPLETE':
+                        orders = kite.orders()
+                        # for order in orders:
+                        for order in range(len(orders)):
+                            order_id = orders[order]['order_id']
+                            if order_id == pe_sell_order_id:
+                                order_status = orders[order]['status']
+                                time.sleep(1)
+                
+                # sending order update to telegram
+                telegram_message = (
+                    "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
+                    f"Getting {getting}\n"
+                    f"Selling {selling_strike_trading_symbol} @ <b>{selling_strike_price}</b>\n"
+                    f"with\n"
+                    f"Hedge {hedging_strike_trading_symbol} @ <b>{hedging_strike_price}</b>\n"
+                )
+                serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
+
             
-            # sending order update to telegram
-            telegram_message = (
-                "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
-                f"Getting {getting}\n"
-                f"Selling {selling_strike_trading_symbol} @ <b>{selling_strike_price}</b>\n"
-                f"with\n"
-                f"Hedge {hedging_strike_trading_symbol} @ <b>{hedging_strike_price}</b>\n"
-            )
-            serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
+            # Checking Short Condition
+            elif sc1 and sc2 and sc3 and sc4:
+            # if True:
+                contract                         = 'CE'
+                getting                          = "short"
+                underlying_ltp                   = kite.ltp(nifty_index)
+                underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
 
-        
-        # Checking Short Condition
-        elif sc1 and sc2 and sc3 and sc4:
-        # if True:
-            contract                         = 'CE'
-            getting                          = "short"
-            underlying_ltp                   = kite.ltp(nifty_index)
-            underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
-
-            # Executing Hedge first
-            ce_opt_hedge_id = serverside_functions.finding_strike_delta_based(
-                underlying_name              = 'NIFTY',
-                instrument_file              = instrument_file,
-                initial_strike               = selling_strike,
-                contract                     = contract,
-                underlying_price             = underlying_ltp,
-                kite                         = kite,
-                delta_                       = 10
-            )
-
-            hedgig_id                        = ce_opt_hedge_id[0] # type: ignore
-            hedging_strike_trading_symbol    = ce_opt_hedge_id[1] # type: ignore
-            hedging_strike_lot_size          = ce_opt_hedge_id[2] # type: ignore
-            hedging_strike_price             = ce_opt_hedge_id[3] # type: ignore
-
-            # ce_hedge_order_id = None
-            if punch_order == 1:
-                # Placing Order
-                ce_hedge_order_id = kite.place_order(
-                    variety            = order_variety,
-                    exchange           = "NFO",
-                    tradingsymbol      = hedging_strike_trading_symbol,
-                    transaction_type   = "BUY",
-                    quantity           = hedging_strike_lot_size,
-                    product            = "NRML",
-                    order_type         = "LIMIT",
-                    price              = hedging_strike_price
+                # Executing Hedge first
+                ce_opt_hedge_id = serverside_functions.finding_strike_delta_based(
+                    underlying_name              = 'NIFTY',
+                    instrument_file              = instrument_file,
+                    initial_strike               = selling_strike,
+                    contract                     = contract,
+                    underlying_price             = underlying_ltp,
+                    kite                         = kite,
+                    delta_                       = 10
                 )
 
-                order_status = None
-                while order_status != 'COMPLETE':
-                    orders = kite.orders()
-                    # for order in orders:
-                    for order in range(len(orders)):
-                        order_id = orders[order]['order_id']
-                        if order_id == ce_hedge_order_id:
-                            order_status = orders[order]['status']
-                            time.sleep(1)
+                hedgig_id                        = ce_opt_hedge_id[0] # type: ignore
+                hedging_strike_trading_symbol    = ce_opt_hedge_id[1] # type: ignore
+                hedging_strike_lot_size          = ce_opt_hedge_id[2] # type: ignore
+                hedging_strike_price             = ce_opt_hedge_id[3] # type: ignore
 
-            # executing order next
-            ce_opt_sell_id = serverside_functions.finding_strike_delta_based(
-                underlying_name              = 'NIFTY',
-                instrument_file              = instrument_file,
-                initial_strike               = selling_strike,
-                contract                     = contract,
-                underlying_price             = underlying_ltp,
-                kite                         = kite,
-                delta_                       = 35
-            )
+                # ce_hedge_order_id = None
+                if punch_order == 1:
+                    # Placing Order
+                    ce_hedge_order_id = kite.place_order(
+                        variety            = order_variety,
+                        exchange           = "NFO",
+                        tradingsymbol      = hedging_strike_trading_symbol,
+                        transaction_type   = "BUY",
+                        quantity           = hedging_strike_lot_size,
+                        product            = "NRML",
+                        order_type         = "LIMIT",
+                        price              = hedging_strike_price
+                    )
 
-            selling_id                       = ce_opt_sell_id[0] # type: ignore
-            selling_strike_trading_symbol    = ce_opt_sell_id[1] # type: ignore
-            selling_strike_lot_size          = ce_opt_sell_id[2] # type: ignore
-            selling_strike_price             = ce_opt_sell_id[3] # type: ignore
+                    order_status = None
+                    while order_status != 'COMPLETE':
+                        orders = kite.orders()
+                        # for order in orders:
+                        for order in range(len(orders)):
+                            order_id = orders[order]['order_id']
+                            if order_id == ce_hedge_order_id:
+                                order_status = orders[order]['status']
+                                time.sleep(1)
 
-            if punch_order == 1:
-                # Placing Order
-                ce_sell_order_id = kite.place_order(
-                    variety            = order_variety,
-                    exchange           = "NFO",
-                    tradingsymbol      = selling_strike_trading_symbol,
-                    transaction_type   = "SELL",
-                    quantity           = selling_strike_lot_size,
-                    product            = "NRML",
-                    order_type         = "LIMIT",
-                    price              = selling_strike_price
+                # executing order next
+                ce_opt_sell_id = serverside_functions.finding_strike_delta_based(
+                    underlying_name              = 'NIFTY',
+                    instrument_file              = instrument_file,
+                    initial_strike               = selling_strike,
+                    contract                     = contract,
+                    underlying_price             = underlying_ltp,
+                    kite                         = kite,
+                    delta_                       = 35
                 )
 
-                order_status = None
-                while order_status != 'COMPLETE':
-                    orders = kite.orders()
-                    # for order in orders:
-                    for order in range(len(orders)):
-                        order_id = orders[order]['order_id']
-                        if order_id == ce_sell_order_id:
-                            order_status = orders[order]['status']
-                            time.sleep(1)
-            
-            # send order update to telegram
-            telegram_message = (
-                "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
-                f"Getting {getting}\n"
-                f"Selling {selling_strike_trading_symbol} @ <b>{selling_strike_price}</b>\n"
-                f"with\n"
-                f"Hedge {hedging_strike_trading_symbol} @ <b>{hedging_strike_price}</b>\n"
-            )
-            serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
+                selling_id                       = ce_opt_sell_id[0] # type: ignore
+                selling_strike_trading_symbol    = ce_opt_sell_id[1] # type: ignore
+                selling_strike_lot_size          = ce_opt_sell_id[2] # type: ignore
+                selling_strike_price             = ce_opt_sell_id[3] # type: ignore
+
+                if punch_order == 1:
+                    # Placing Order
+                    ce_sell_order_id = kite.place_order(
+                        variety            = order_variety,
+                        exchange           = "NFO",
+                        tradingsymbol      = selling_strike_trading_symbol,
+                        transaction_type   = "SELL",
+                        quantity           = selling_strike_lot_size,
+                        product            = "NRML",
+                        order_type         = "LIMIT",
+                        price              = selling_strike_price
+                    )
+
+                    order_status = None
+                    while order_status != 'COMPLETE':
+                        orders = kite.orders()
+                        # for order in orders:
+                        for order in range(len(orders)):
+                            order_id = orders[order]['order_id']
+                            if order_id == ce_sell_order_id:
+                                order_status = orders[order]['status']
+                                time.sleep(1)
+                
+                # send order update to telegram
+                telegram_message = (
+                    "<b>🚨 Still in experimental stage, do not trade</b>\n\n"
+                    f"Getting {getting}\n"
+                    f"Selling {selling_strike_trading_symbol} @ <b>{selling_strike_price}</b>\n"
+                    f"with\n"
+                    f"Hedge {hedging_strike_trading_symbol} @ <b>{hedging_strike_price}</b>\n"
+                )
+                serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
     elif current_minute % 30 == 0 and last_run_minute != current_minute:
         # send active update to telegram
@@ -453,10 +455,10 @@ while is_market_live:
             text          = "Algorithm is still active")
 
     # sleeping for 15 seconds
-    # time.sleep(15)
+    time.sleep(15)
     last_run_minute = current_minute
 
-    if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
+    if datetime.now().time() >= datetime.time(datetime.strptime("00:15", "%H:%M")):
         current_date += timedelta(days=1)
         yesterday_date += timedelta(days=1)
         the_day_before_yesterday += timedelta(days=1)

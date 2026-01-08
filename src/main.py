@@ -51,7 +51,11 @@ except Exception as e:
 #-----------------------------------------------------------------------------------------------------------------------
 
 # watchlist
-watchlist = ['NIFTY']
+watchlist = {
+    'NIFTY': 256265,
+    'SENSEX': 265,
+    'NIFTYBANK': 260105
+}
 
 # loading instrument file 
 instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
@@ -81,22 +85,30 @@ if today is expiry then tomorrow, calculate spot pivot.
 """
 pivot_df = {}
 
-for n in watchlist:
-    futures = serverside_functions.get_futures_list(n, instrument_file)
-    current_futures = futures[0]['instrument_token']
-    fut_data = kite.historical_data(instrument_token=current_futures, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date, continuous=True)
-    for i in range(len(fut_data)):
-        previous_day_high = fut_data[i]['high']
-        previous_day_low = fut_data[i]['low']
-        previous_day_close = fut_data[i]['close']
-        daily_pivots = serverside_functions.camarilla_pivot_calculation(data=fut_data[i])
-        if n not in pivot_df:
-            pivot_df[n] = {}
-        pivot_df[n][i] = daily_pivots
+next_session_cpr_metric_df = {}
+two_day_relationship_df = {}
 
-next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df['NIFTY'][1]['pivot'], TC=pivot_df['NIFTY'][1]['top_central'], BC=pivot_df['NIFTY'][1]['bottom_central'])
+for key, value in watchlist.items():
+    spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date)
+    for i in range(len(spot_data)):
+        previous_day_high = spot_data[i]['high']
+        previous_day_low = spot_data[i]['low']
+        previous_day_close = spot_data[i]['close']
+        daily_pivots = serverside_functions.camarilla_pivot_calculation(data=spot_data[i])
+        if key not in pivot_df:
+            pivot_df[key] = {}
+        pivot_df[key][i] = daily_pivots
 
-logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df['NIFTY'][1]['R3'], t_low=pivot_df['NIFTY'][1]['S3'], y_high=pivot_df['NIFTY'][0]['R3'], y_low=pivot_df['NIFTY'][0]['S3'])
+for key in pivot_df:
+    next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
+
+    logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+
+    if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
+        next_session_cpr_metric_df[key] = {}
+        two_day_relationship_df[key] = {}
+    next_session_cpr_metric_df[key] = next_session_cpr_metric
+    two_day_relationship_df[key] = logic_flow_from_two_day_relationship
 
 # 1 means yes && 0 means no
 testing = 1

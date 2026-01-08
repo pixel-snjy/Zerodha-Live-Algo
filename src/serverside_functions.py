@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs
 import mibian
 
 import pandas as pd
-import polars as pl
+# import polars as pl
 import requests
 from kiteconnect import KiteConnect
 
@@ -557,7 +557,7 @@ def cpr_metrics(pivot, TC, BC):
 
     return round(pivot_width_ratio * 100, 2)
 
-def two_day_relationship(t_high, t_low, y_high, y_low):
+def two_day_relationship(t_high, t_low, y_high, y_low, index):
     if t_low > y_high:
         return "Bullish: High conviction"
     elif t_high > y_high and t_low < y_high:

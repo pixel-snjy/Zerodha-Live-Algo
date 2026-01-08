@@ -4,12 +4,16 @@ Bugs to remove:
   3. while calculating after the market next day cpr and camarilla support-resistance calculation has a variation.
 
 Equity Swing trading:
-  1. when price closes above CPR top pivot; go long until it closes below CPR bottom pivot. any timeframe.
+  1. when price closes above CPR top central; go long until it closes below CPR bottom central.
+    a. timeframe 30 minute or 15 minute.
+
+Functions to create:
+  1. fetch instrument token from current expiry options contract.
 
 CPR - Pivot Boss trades:
-  1. define the trend from comparing previous session cpr+moneyZone to current session cpr+moneyZone
+  1. ~~define the trend from comparing previous session cpr+moneyZone to current session cpr+moneyZone~~
   2. swing high to swing low from any given data.
-  3. cpr breadth calculation for sideways or trending session.
+  3. ~~cpr breadth calculation for sideways or trending session.~~
   4. L3 and below are buyer zones && R3 and above are seller zones.
   5. define initial balance concept too.
     a. here take 1 hour data of the day.
@@ -21,7 +25,18 @@ CPR - Pivot Boss trades:
   6. trades those strikes for selling perspective. if market is positive then sell put [day high], if market is negative then sell call [day low].
   7. after defining intial balance track those contracts. if there will be new low or new high in the ongoing market then change strikes accordingly.
 
+Stock Selling Concept:
+  8. Initial balnce concept for stock selling::
+    a. check sensex & nifty high
+    b. friday-monday-tuesday check nifty only, wednesday-thursday check sensex only.
+    c. according to high fetch PE contract and check whether it's closing above 'R4' @ 10:15AM
+    d. if it met the given condition then fetch those stocks from the cnx500 who breaks the support with resistance touch.
+    e. then sort them according to S1-S4.
+    f. send initial balance report to telegram exactly at 10:15AM
 
+Utility::
+  1. integrate Email.
+  2. save trades in googleSheets/csv/sql with conditions.
 
 #Framework to work on ::
 

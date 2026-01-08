@@ -1,5 +1,1 @@
-<<<<<<< HEAD
 VZGf1EWISB2GdnWSK58WHDla9fQiMoH8
-=======
-2x7UY6SQqsNHKx3PpMAc2hzBGMl5TxWD
->>>>>>> b470f35 (TODO.md)

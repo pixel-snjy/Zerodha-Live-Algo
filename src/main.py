@@ -1,6 +1,6 @@
 import json
-import time
-from datetime import datetime, timedelta
+# import time
+from datetime import datetime, timedelta, time
 from pathlib import Path
 import pyotp
 import os
@@ -66,10 +66,10 @@ getting                  = None
 current_date             = datetime.now().date()
 yesterday_date           = current_date - timedelta(days=1)
 the_day_before_yesterday = current_date - timedelta(days=2)
-if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
-    current_date += timedelta(days=1)
-    yesterday_date += timedelta(days=1)
-    the_day_before_yesterday += timedelta(days=1)
+# if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
+#     current_date += timedelta(days=1)
+#     yesterday_date += timedelta(days=1)
+#     the_day_before_yesterday += timedelta(days=1)
 if yesterday_date.weekday() == 6:
     yesterday_date  -= timedelta(days=2)
 elif yesterday_date.weekday() == 5:
@@ -110,6 +110,25 @@ for key in pivot_df:
     next_session_cpr_metric_df[key] = next_session_cpr_metric
     two_day_relationship_df[key] = logic_flow_from_two_day_relationship
 
+# for key in pivot_df:
+    early_message = (
+        f"today {key} Spot analysis:\n\n"
+        f"pivot: {pivot_df[key][1]['pivot']}\n"
+        f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
+        f"top central: {pivot_df[key][1]['top_central']}\n\n"
+        f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
+        f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
+        f"cpr breadth: {next_session_cpr_metric_df[key]}\n"
+        f"two day value area relationship:\n*{two_day_relationship_df[key]}*\n\n"
+        "⚠️ still in experimental stage\n"
+    )
+
+    serverside_functions.send_telegram_message(
+        bot_token= telegram_bot_token,
+        chat_id= personal_telegram_id,
+        text= early_message
+    )
+
 # 1 means yes && 0 means no
 testing = 1
 punch_order = 0
@@ -126,7 +145,8 @@ if testing == 0:
             time.sleep(seconds_to_sleep)
         now_time = datetime.now().time()
 
-while True:
+is_market_live = True
+while is_market_live:
 
     # logic to tell user that market is open & logic starting to execute
     now_time = datetime.now().time()
@@ -139,7 +159,7 @@ while True:
 
     # logic to skip the order flow beyond market hours
     if testing == 0:
-        if now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")):
+        if now_time >= datetime.time(datetime.strptime("15:45", "%H:%M")):
             # Send alert to Telegram
             serverside_functions.send_telegram_message(
                 bot_token = telegram_bot_token,
@@ -155,7 +175,21 @@ while True:
                 text      = f"Exception {e} raised while deleting access_token & instrument_file"
                 )
             time.sleep(1)
-            break
+            is_market_live = False
+        
+    # initial balance logic
+    if time(10, 15) <= datetime.now().time() < time(10, 30):
+    # if True:
+        if current_date.weekday() == 4 or current_date.weekday() == 0 or current_date.weekday() == 1:
+            token_id = watchlist['NIFTY']
+        elif current_date.weekday() == 2 or current_date.weekday() == 3:
+            token_id = watchlist['SENSEX']
+        initial_balance_data = kite.historical_data(instrument_token=token_id, from_date=current_date, to_date=current_date, interval='60minute')
+        # buyer ki toh banegi CE contract
+        buyer = round(initial_balance_data[0]['low'], -2)
+        # seller ki banegi PE contract
+        seller = round(initial_balance_data[0]['high'], -2)
+        
 
     # Logic to change order from regular to amo
     # current_date = datetime.now().date()
@@ -172,7 +206,7 @@ while True:
     current_minute = datetime.now().minute
     # if current_minute % 15 == 0 and last_run_minute != current_minute:
     if True:
-        print("Running logic")
+        # print("Running logic")
         for_15m_data = current_date - timedelta(days=28)
         # for_5m_data = current_date - timedelta(days=10)
 
@@ -419,10 +453,53 @@ while True:
             text          = "Algorithm is still active")
 
     # sleeping for 15 seconds
-    time.sleep(15)
+    # time.sleep(15)
     last_run_minute = current_minute
 
-if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
-    current_date += timedelta(days=1)
-    yesterday_date += timedelta(days=1)
-    the_day_before_yesterday += timedelta(days=1)
+    if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
+        current_date += timedelta(days=1)
+        yesterday_date += timedelta(days=1)
+        the_day_before_yesterday += timedelta(days=1)
+    
+        for key, value in watchlist.items():
+            spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date)
+            for i in range(len(spot_data)):
+                previous_day_high = spot_data[i]['high']
+                previous_day_low = spot_data[i]['low']
+                previous_day_close = spot_data[i]['close']
+                daily_pivots = serverside_functions.camarilla_pivot_calculation(data=spot_data[i])
+                if key not in pivot_df:
+                    pivot_df[key] = {}
+                pivot_df[key][i] = daily_pivots
+
+        for key in pivot_df:
+            next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
+
+            logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+
+            if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
+                next_session_cpr_metric_df[key] = {}
+                two_day_relationship_df[key] = {}
+            next_session_cpr_metric_df[key] = next_session_cpr_metric
+            two_day_relationship_df[key] = logic_flow_from_two_day_relationship
+        
+            EOD_message = (
+                "based on <b>intraday closing price</b>\n"
+                f"tomorrow {key} Spot analysis:\n\n"
+                f"pivot: {pivot_df[key][1]['pivot']}\n"
+                f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
+                f"top central: {pivot_df[key][1]['top_central']}\n\n"
+                f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n\n"
+                f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
+                f"cpr breadth: {next_session_cpr_metric_df[key]}\n"
+                f"two day value area relationship:\n<b>{two_day_relationship_df[key]}</b>\n\n"
+                "⚠️ still in experimental stage::\n"
+                "will improve on <b>EOD closing price.</b>"
+            )
+
+            serverside_functions.send_telegram_message(
+                bot_token= telegram_bot_token,
+                chat_id= personal_telegram_id,
+                text= EOD_message
+            )
+        # is_market_live = False

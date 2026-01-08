@@ -2,20 +2,22 @@ import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+import pyotp
+import os
 
 import pandas as pd
-import pandas_ta as pta
+import pandas_ta_classic as pta
 from kiteconnect import KiteConnect
 
 import serverside_functions
 
-##### Create Dependencies directory if it doesn't exist #####
+# Create Dependencies directory if it doesn't exist 
 deps_dir = Path("src/Dependencies")
 deps_dir.mkdir(exist_ok=True)
 
 #-----------------------------------------------------------------------------------------------------------------------
 
-##### Loading key credentials #####
+# Loading key credentials 
 with open("src/do_not_delete/api-core.json", "r") as creds:
     data = json.load(creds)
 api_key = data["zerodha_api_key"]
@@ -23,18 +25,22 @@ api_secret = data["zerodha_api_secret"]
 telegram_bot_token = data["telegram_bot_token"]
 personal_telegram_id = data["personal_telegram_id"]
 broadcast_telegram_id = data["group_telegram_id"]
+totp_secret_key = data['zerodha_totp_secret_key']
 
 # interestRate = 5.27 # 91D T-Bill
 #-----------------------------------------------------------------------------------------------------------------------
 
-##### Login flow #####
+# Login flow
+
+totp = pyotp.TOTP(totp_secret_key)
+otp = totp.now()
+
 try:
     with open(deps_dir / "access_token.txt", "r") as file:
         access_token = file.read()
     kite = KiteConnect(api_key)
     kite.set_access_token(access_token)
     kite.margins()
-    # kite.positions()
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
     serverside_functions.login(api_key, api_secret, telegram_bot_token, personal_telegram_id)
@@ -44,22 +50,62 @@ except Exception as e:
     kite.set_access_token(access_token)
 #-----------------------------------------------------------------------------------------------------------------------
 
+# watchlist
+watchlist = ['NIFTY']
 
-##### loading instrument file #####
+# loading instrument file 
 instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
 
-##### Static variables #####
-last_run_minute = None
-getting = None
+# Static variables 
+last_run_minute          = None
+getting                  = None
+current_date             = datetime.now().date()
+yesterday_date           = current_date - timedelta(days=1)
+the_day_before_yesterday = current_date - timedelta(days=2)
+if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
+    current_date += timedelta(days=1)
+    yesterday_date += timedelta(days=1)
+    the_day_before_yesterday += timedelta(days=1)
+if yesterday_date.weekday() == 6:
+    yesterday_date  -= timedelta(days=2)
+elif yesterday_date.weekday() == 5:
+    yesterday_date  -= timedelta(days=1)
+if the_day_before_yesterday.weekday() == 6:
+    the_day_before_yesterday -= timedelta(days=2)
+elif the_day_before_yesterday.weekday() == 5:
+    the_day_before_yesterday -= timedelta(days=1)
+
+"""
+calculation of yesterday pivots in futures if available.
+if today is expiry then tomorrow, calculate spot pivot.
+"""
+pivot_df = {}
+
+for n in watchlist:
+    futures = serverside_functions.get_futures_list(n, instrument_file)
+    current_futures = futures[0]['instrument_token']
+    fut_data = kite.historical_data(instrument_token=current_futures, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date, continuous=True)
+    for i in range(len(fut_data)):
+        previous_day_high = fut_data[i]['high']
+        previous_day_low = fut_data[i]['low']
+        previous_day_close = fut_data[i]['close']
+        daily_pivots = serverside_functions.camarilla_pivot_calculation(data=fut_data[i])
+        if n not in pivot_df:
+            pivot_df[n] = {}
+        pivot_df[n][i] = daily_pivots
+
+next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df['NIFTY'][1]['pivot'], TC=pivot_df['NIFTY'][1]['top_central'], BC=pivot_df['NIFTY'][1]['bottom_central'])
+
+logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df['NIFTY'][1]['R3'], t_low=pivot_df['NIFTY'][1]['S3'], y_high=pivot_df['NIFTY'][0]['R3'], y_low=pivot_df['NIFTY'][0]['S3'])
 
 # 1 means yes && 0 means no
-testing = 0
+testing = 1
 punch_order = 0
 
-# logic to pause the script till 0920Hrs or desired time.
+# logic to pause the script till 0930Hrs or desired time.
 now = datetime.now()
 now_time = now.time()
-target_time = datetime.time(datetime.strptime("09:20", "%H:%M"))
+target_time = datetime.time(datetime.strptime("09:30", "%H:%M"))
 if testing == 0:
     if now_time < target_time:
         target_dt = datetime.combine(now.date(), target_time)
@@ -88,10 +134,19 @@ while True:
                 chat_id   = personal_telegram_id,
                 text      = "Market is closed"
                 )
+            try:
+                os.remove(f"{deps_dir}/access_token.txt")
+            except Exception as e:
+                serverside_functions.send_telegram_message(
+                bot_token = telegram_bot_token,
+                chat_id   = personal_telegram_id,
+                text      = f"Exception {e} raised while deleting access_token & instrument_file"
+                )
+            time.sleep(1)
             break
 
     # Logic to change order from regular to amo
-    current_date = datetime.now().date()
+    # current_date = datetime.now().date()
     equity_trading_hours = (
             datetime.time(
             datetime.strptime("09:15", "%H:%M")) <= datetime.now().time() <= datetime.time(
@@ -103,17 +158,18 @@ while True:
         order_variety = 'regular'
 
     current_minute = datetime.now().minute
-    if current_minute % 5 == 0 and last_run_minute != current_minute:
-    # if True:
+    # if current_minute % 15 == 0 and last_run_minute != current_minute:
+    if True:
         print("Running logic")
-        # for_15m_data = current_date - timedelta(days=28)
-        for_5m_data = current_date - timedelta(days=10)
+        for_15m_data = current_date - timedelta(days=28)
+        # for_5m_data = current_date - timedelta(days=10)
 
-        ##### Fetch Instrument #####
+        # Fetch Instrument 
         nifty_index = "256265"
+        nifty_futures = ""
         # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
         #                                  to_date=current_date)
-        chart_5m = kite.historical_data(instrument_token=nifty_index, interval="5minute", from_date=for_5m_data,
+        chart_5m = kite.historical_data(instrument_token=nifty_index, interval="15minute", from_date=for_15m_data,
                                         to_date=current_date)
 
         # chart = kite
@@ -122,18 +178,18 @@ while True:
         ha_chart_df = serverside_functions.convert_heikin_ashi(chart_df).round(2)
         # -----------------------------------------------------------------------------------------------------------------------
 
-        ##### Strategy 1 ==>> Double SuperTrend for Directional Trade #####
+        # Strategy 1 ==>> Double SuperTrend for Directional Trade 
         st1_ha = pta.supertrend(
             high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=11, multiplier=1
         ).round(2)
         st2_ha = pta.supertrend(
             high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=18, multiplier=2
         ).round(2)
-        st1_ha_direction = st1_ha.iloc[-2, 1]
-        stop_loss = st1_ha.iloc[-2, 0]
-        st2_ha_direction = st2_ha.iloc[-2, 1]
-        prev_st2_ha_direction = st2_ha.iloc[-3, 1]
-        selling_strike = int(round(stop_loss, -2)) # type: ignore
+        st1_ha_direction = st1_ha.iloc[-1, 1].item()
+        stop_loss = st1_ha.iloc[-1, 0].item()
+        st2_ha_direction = st2_ha.iloc[-1, 1].item()
+        prev_st2_ha_direction = st2_ha.iloc[-2, 1].item()
+        selling_strike = int(round(stop_loss, -2))
 
         # Collecting data for Long Condition
         bc1 = st1_ha_direction == 1
@@ -147,7 +203,7 @@ while True:
         sc3 = getting is None
         sc4 = prev_st2_ha_direction == 1
 
-        ##### Checking Long Condition #####===============================================================
+        # Checking Long Condition 
         if bc1 and bc2 and bc3 and bc4:
         # if True:
             contract                         = 'PE'
@@ -246,7 +302,7 @@ while True:
             serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
         
-        ##### Checking Short Condition #####==============================================================
+        # Checking Short Condition
         elif sc1 and sc2 and sc3 and sc4:
         # if True:
             contract                         = 'CE'
@@ -353,3 +409,8 @@ while True:
     # sleeping for 15 seconds
     time.sleep(15)
     last_run_minute = current_minute
+
+if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
+    current_date += timedelta(days=1)
+    yesterday_date += timedelta(days=1)
+    the_day_before_yesterday += timedelta(days=1)

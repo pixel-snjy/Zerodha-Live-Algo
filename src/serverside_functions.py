@@ -144,7 +144,7 @@ def _download_instruments(kite: KiteConnect, bot_token: str, chat_id: str, deps_
         chat_id: Telegram chat ID to send updates to
         deps_dir: Directory to save the instruments data
     """
-    send_telegram_message(bot_token, chat_id, "📥 Downloading instrument data...")
+    # send_telegram_message(bot_token, chat_id, "📥 Downloading instrument data...")
     
     exchanges = ['NSE', 'NFO', 'BSE', 'BFO', 'MCX']
     all_instruments = []
@@ -154,8 +154,8 @@ def _download_instruments(kite: KiteConnect, bot_token: str, chat_id: str, deps_
         try:
             instruments = kite.instruments(exchange=exchange)
             all_instruments.extend(instruments)
-            send_telegram_message(bot_token, chat_id, 
-                                f"✓ Fetched {len(instruments)} instruments from {exchange}")
+            # send_telegram_message(bot_token, chat_id, 
+            #                     f"✓ Fetched {len(instruments)} instruments from {exchange}")
         except Exception as e:
             error_msg = f"⚠ Could not fetch instruments for {exchange}: {str(e)}"
             send_telegram_message(bot_token, chat_id, error_msg)
@@ -164,7 +164,7 @@ def _download_instruments(kite: KiteConnect, bot_token: str, chat_id: str, deps_
     if all_instruments:
         df = pd.DataFrame(all_instruments)
         df.to_csv(deps_dir / "tradeable_instruments.csv", index=False)
-        success_msg = f"✅ Successfully saved {len(df)} instruments to tradeable_instruments.csv"
+        success_msg = "✅ Successfully saved instrument file."
         send_telegram_message(bot_token, chat_id, success_msg)
     else:
         send_telegram_message(bot_token, chat_id, 
@@ -200,6 +200,11 @@ def login(api_key: str, api_secret: str, bot_token: str, chat_id: str) -> KiteCo
         
         # Generate and send login URL via Telegram
         login_url = kite.login_url()
+
+        """
+        Automate the login flow using pyotp and selenium driver
+        """
+
         auth_message = (
             "🔑 <b>KiteConnect Authentication Required</b>\n\n"
             f"1. Click this link to login: <a href='{login_url}'>Login to Kite</a>\n"
@@ -386,49 +391,41 @@ def get_futures_list(underlying_name, instrument_file):
               or None if error occurs
     """
     try:
-        # Read the instrument file using Polars
-        # try:
-        #     df = pl.scan_csv('src/Dependencies/tradeable_instruments.csv')
-        # except Exception as e:
-        #     print(f"❌ Error reading instrument file: {str(e)}")
-        #     return None
-        
         # Convert to uppercase for case-insensitive comparison
         underlying_upper = underlying_name.upper()
         
         # Filter for futures contracts of the given underlying
-        futures = (instrument_file
-            .filter(
-                (pl.col("instrument_type") == "FUT") &
-                (pl.col("name").str.to_uppercase() == underlying_upper)
-            )
-            .collect()
-        )
+        # .query() or boolean indexing both work, but boolean indexing is standard
+        futures = instrument_file[
+            (instrument_file["instrument_type"] == "FUT") & 
+            (instrument_file["name"].str.upper() == underlying_upper)
+        ].copy()
         
-        if futures.is_empty():
+        if futures.empty:
             print(f"❌ No futures contracts found for {underlying_name}")
             return None
         
-        # Select and format the required fields
-        futures = futures.select([
-            pl.col("instrument_token").cast(pl.Int64),
-            "tradingsymbol",
-            "expiry",
-            pl.col("lot_size").cast(pl.Int64),
-            pl.col("tick_size").cast(pl.Float64),
+        # Select and cast the required fields
+        # Using .astype() to handle the type conversions
+        futures = futures[[
+            "instrument_token", 
+            "tradingsymbol", 
+            "expiry", 
+            "lot_size", 
+            "tick_size", 
             "exchange"
-        ])
+        ]].astype({
+            "instrument_token": "int64",
+            "lot_size": "int64",
+            "tick_size": "float64"
+        })
         
         # Convert to list of dictionaries
-        return futures.to_dicts()
-        
-    except FileNotFoundError:
-        print("❌ Instrument list file not found at 'Dependencies/tradeable_instruments.csv'")
-        return None
+        # 'records' orientation gives you the list of dicts [{col: val}, ...]
+        return futures.to_dict(orient='records')
+
     except Exception as e:
-        print(f"❌ Error fetching futures list: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ An error occurred: {str(e)}")
         return None
 
 def finding_strike_delta_based(underlying_name, instrument_file, initial_strike, contract, underlying_price, kite, delta_):
@@ -499,3 +496,79 @@ def finding_strike_delta_based(underlying_name, instrument_file, initial_strike,
         delta = abs(delta)
         if delta < delta_:
             return token, trading_symbol, lot_size, strike_ltp
+
+def camarilla_pivot_calculation(data):
+    """
+    data: feed data in dictionary key: value pairs
+    example; { 'high': int/float, 'low': int/float, 'close': int/float }
+    """
+    daily_high       = data['high']
+    daily_low        = data['low']
+    daily_close      = data['close']
+
+    range = round(daily_high - daily_low, 2)
+
+    # calculation of 'central pivot range' (CPR)
+    pivot            = round((daily_high + daily_low + daily_close) / 3, 2)
+    bottom_central   = round((daily_high + daily_low) / 2, 2)
+    top_central      = round((pivot - bottom_central) + pivot, 2)
+
+    # calculation of camarilla pivot points
+    resistance_1     = round(daily_close + range * 1.1 / 12, 2)
+    resistance_2     = round(daily_close + range * 1.1 / 6, 2)
+    resistance_3     = round(daily_close + range * 1.1 / 4, 2)
+    resistance_4     = round(daily_close + range * 1.1 / 2, 2)
+    resistance_5     = round((daily_high / daily_low) * daily_close, 2)
+
+    support_1        = round(daily_close - range * 1.1 / 12, 2)
+    support_2        = round(daily_close - range * 1.1 / 6, 2)
+    support_3        = round(daily_close - range * 1.1 / 4, 2)
+    support_4        = round(daily_close - range * 1.1 / 2, 2)
+    support_5        = round(daily_close - (resistance_5 - daily_close), 2)
+    
+    return {
+        "pivot": pivot, "bottom_central": bottom_central, "top_central": top_central, "R1": resistance_1, "R2": resistance_2, "R3": resistance_3, "R4": resistance_4, "R5": resistance_5, "S1": support_1, "S2": support_2, "S3": support_3, "S4": support_4, "S5": support_5
+    }
+
+def cpr_metrics(pivot, TC, BC):
+    """
+    Summary Table for Pivot Range Histogram Interpretation:
+
+    | Histogram Value | Market Forecast and Conviction                            |
+    | :-------------- | :-------------------------------------------------------- |
+    | **Below 0.25**  | **Highly likely** to be an explosive **Trending Day**.    |
+    | **0.25 - 0.50** | **Likely** to be a **Trending Day**.                      |
+    | **Exactly 0.50**| **Midline** / Neutral point between trend and range.      |
+    | **0.50 - 0.75** | **Likely** to be a **Sideways** or **Trading Range Day**. |
+    | **Above 0.75**  | **Highly likely** to be a quiet or **Sideways Day**.      |
+
+    The **Pivot Range Histogram** mathematically measures the width of the central pivot range to forecast whether the market will be trending or sideways. 
+    According to the sources, any reading **below the midline of 0.5** indicates a trending type of day. 
+    Conversely, any reading **above 0.5** indicates a sideways or trading range session. 
+    The mathematical formula used to derive this metric is **((TC - BC) / PP) * 100**. 
+    An unusually tight pivot range indicates the prior day was a consolidation, which often leads to **breakout or trending behavior** in the upcoming session. 
+    In contrast, an abnormally wide range suggests the market experienced a large move previously and is now likely to experience **low volatility or whipsaw activity**. 
+    This analysis allows a trader to adjust their plan, such as switching between **trailing profit stops** for trending days or **fixed profit targets** for range-bound days.
+    """
+    actual_tc = max(TC, BC)
+    actual_bc = min(TC, BC)
+
+    pivot_width_ratio = abs(actual_tc - actual_bc) / pivot
+
+    return round(pivot_width_ratio * 100, 2)
+
+def two_day_relationship(t_high, t_low, y_high, y_low):
+    if t_low > y_high:
+        return "Bullish: High conviction"
+    elif t_high > y_high and t_low < y_high:
+        return "Moderately Bullish: Strength is wavering"
+    elif t_high < y_low:
+        return "Bearish: High conviction"
+    elif t_low < y_low and t_high > y_low:
+        return "Moderately Bearish: Sellers losing power"
+    elif t_high == y_high and t_low == y_low:
+        return "Neutral: Breakout likely on third day"
+    elif t_high > y_high and t_low < y_low:
+        return "Sideways: Trading range/Whipsaw"
+    elif t_high < y_high and t_low > y_low:
+        return "Breakout: Most explosive potential"

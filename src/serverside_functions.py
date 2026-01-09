@@ -553,22 +553,88 @@ def cpr_metrics(pivot, TC, BC):
     actual_tc = max(TC, BC)
     actual_bc = min(TC, BC)
 
-    pivot_width_ratio = abs(actual_tc - actual_bc) / pivot
+    pivot_width_ratio = round((abs(actual_tc - actual_bc) / pivot) * 100, 2)
 
-    return round(pivot_width_ratio * 100, 2)
+    if pivot_width_ratio < 0.25:
+        return f"CPR breadth is {pivot_width_ratio}, so highly likely to be an explosive trending day"
+    elif pivot_width_ratio < 0.50 and pivot_width_ratio >= 0.25:
+        return f"CPR breadth is {pivot_width_ratio}, so likely to be a trending Day"
+    elif pivot_width_ratio == 0.50:
+        return f"CPR breadth is {pivot_width_ratio}, so midline/neutral point between trend and range"
+    elif pivot_width_ratio > 0.50 and pivot_width_ratio <= 0.75:
+        return f"CPR breadth is {pivot_width_ratio}, so likely to be a sideways or trading range day"
+    elif pivot_width_ratio > 0.75:
+        return f"CPR breadth is {pivot_width_ratio}, so highly likely to be a quiet or sideways day"
+
+
+    # return f"{pivot_width_ratio}"
 
 def two_day_relationship(t_high, t_low, y_high, y_low, index):
+    """
+    Logic for Two-Day Relationship Calculation (Camarilla H3/L3):
+
+    This script categorizes the relationship between the current session's pivot boundaries and the prior session's boundaries to determine early market directional bias and conviction. 
+
+    In this implementation, the 'boundaries' are defined as the third layer of the Camarilla Equation: 
+    - High Boundary: Resistance 3 (H3 / Sell Reversal)
+    - Low Boundary: Support 3 (L3 / Buy Reversal)
+
+    Variables:
+        T_High: Today's H3 (Resistance 3)
+        T_Low:  Today's L3 (Support 3)
+        Y_High: Yesterday's H3
+        Y_Low:  Yesterday's L3
+
+    The Seven Relationships (Source Logic):
+    -------------------------------------------------------------------------------
+    1. Higher Value:        (T_Low > Y_High)
+    Bias: Bullish. Market successfully pushed price higher.
+
+    2. Overlapping Higher:  (T_High > Y_High) AND (T_Low < Y_High)
+    Bias: Moderately Bullish. Buyers are in control but strength is wavering.
+
+    3. Lower Value:         (T_High < Y_Low)
+    Bias: Bearish. Market successfully pushed price lower.
+
+    4. Overlapping Lower:   (T_Low < Y_Low) AND (T_High > Y_Low)
+    Bias: Moderately Bearish. Sellers in control but strength is wavering.
+
+    5. Unchanged Value:     (T_High == Y_High) AND (T_Low == Y_Low)
+    Bias: Neutral/Sideways. Breakout potential if price opens near extremes.
+
+    6. Outside Value:       (T_High > Y_High) AND (T_Low < Y_Low)
+    Bias: Sideways/Trading Range. Market is expanded but lacks conviction.
+
+    7. Inside Value:        (T_High < Y_High) AND (T_Low > Y_Low)
+    Bias: Breakout. Market is winding up for an explosive Trend Day.
+
+    Execution Rules (Acceptance vs. Rejection):
+    - Bias is ACCEPTED if the Opening Price confirms the relationship (e.g., price opens above L3 in a Higher Value setup).
+    - Bias is REJECTED if the Opening Price occurs against the grain (e.g., price gaps below the pivots in a Higher Value setup). This often leads to an aggressive move in the opposite direction.
+    """
     if t_low > y_high:
-        return "Bullish: High conviction"
+        return "Bias: Bullish. Market successfully pushed price higher."
     elif t_high > y_high and t_low < y_high:
-        return "Moderately Bullish: Strength is wavering"
+        return "Bias: Moderately Bullish. Buyers are in control but strength is wavering."
     elif t_high < y_low:
-        return "Bearish: High conviction"
+        return "Bias: Bearish. Market successfully pushed price lower."
     elif t_low < y_low and t_high > y_low:
-        return "Moderately Bearish: Sellers losing power"
+        return "Bias: Moderately Bearish. Sellers in control but strength is wavering."
     elif t_high == y_high and t_low == y_low:
-        return "Neutral: Breakout likely on third day"
+        return "Bias: Neutral/Sideways. Breakout potential if price opens near extremes."
     elif t_high > y_high and t_low < y_low:
-        return "Sideways: Trading range/Whipsaw"
+        return "Bias: Sideways/Trading Range. Market is expanded but lacks conviction."
     elif t_high < y_high and t_low > y_low:
-        return "Breakout: Most explosive potential"
+        return "Bias: Breakout. Market is winding up for an explosive Trend Day."
+
+def fair_value_gap(data):
+    if data['low'].iloc[-3] > data['high'].iloc[-1]:
+        low = data['low'].iloc[-3].item()
+        high = data['high'].iloc[-1].item()
+        return 'bearish fvg', high, low
+    elif data['high'].iloc[-3] < data['low'].iloc[-1]:
+        high = data['high'].iloc[-3].item()
+        low = data['low'].iloc[-1].item()
+        return 'bullish fvg', high, low
+    else:
+        return None, None, None

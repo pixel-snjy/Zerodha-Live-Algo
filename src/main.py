@@ -54,42 +54,50 @@ except Exception as e:
 watchlist = {
     'NIFTY': 256265,
     'SENSEX': 265,
-    'NIFTYBANK': 260105
+    # 'NIFTYBANK': 260105
 }
 
 # loading instrument file 
 instrument_file = pd.read_csv(deps_dir / 'tradeable_instruments.csv')
 
+# 1 means yes && 0 means no
+testing = 0
+punch_order = 0
+strategy_one = 0
+send_message = 1
+marketClosed = 0
+
 # Static variables 
 last_run_minute          = None
 getting                  = None
-current_date             = datetime.now().date()
-yesterday_date           = current_date - timedelta(days=1)
-the_day_before_yesterday = current_date - timedelta(days=2)
-# if datetime.now().time() >= datetime.time(datetime.strptime("15:35", "%H:%M")):
-#     current_date += timedelta(days=1)
-#     yesterday_date += timedelta(days=1)
-#     the_day_before_yesterday += timedelta(days=1)
-if yesterday_date.weekday() == 6:
-    yesterday_date  -= timedelta(days=2)
-elif yesterday_date.weekday() == 5:
-    yesterday_date  -= timedelta(days=1)
+is_market_live           = True
+current_day              = datetime.now().date()
+next_day                 = current_day + timedelta(days=1)
+yesterday            = current_day - timedelta(days=1)
+the_day_before_yesterday = current_day - timedelta(days=2)
+
+# adjusting dates according to weekdays. when there is saturday or sunday days are adjusted accordingly.
+if yesterday.weekday() == 6:
+    yesterday  -= timedelta(days=2)
+elif yesterday.weekday() == 5:
+    yesterday  -= timedelta(days=1)
 if the_day_before_yesterday.weekday() == 6:
     the_day_before_yesterday -= timedelta(days=2)
 elif the_day_before_yesterday.weekday() == 5:
     the_day_before_yesterday -= timedelta(days=1)
 
 """
-calculation of yesterday pivots in futures if available.
-if today is expiry then tomorrow, calculate spot pivot.
+fetch daily hlc from two consecutive trading sessions.
+based on them calculate CPR/Camarilla for next two consecutive day.
+then based on CPR/Camarilla calculations do interpretation for next session.
 """
-pivot_df = {}
 
+pivot_df = {}
 next_session_cpr_metric_df = {}
 two_day_relationship_df = {}
 
 for key, value in watchlist.items():
-    spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date)
+    spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday)
     for i in range(len(spot_data)):
         previous_day_high = spot_data[i]['high']
         previous_day_low = spot_data[i]['low']
@@ -100,39 +108,58 @@ for key, value in watchlist.items():
         pivot_df[key][i] = daily_pivots
 
 for key in pivot_df:
-    next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
+    nextSessionCprBreadth = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
 
-    logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+    logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
 
     if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
         next_session_cpr_metric_df[key] = {}
         two_day_relationship_df[key] = {}
-    next_session_cpr_metric_df[key] = next_session_cpr_metric
-    two_day_relationship_df[key] = logic_flow_from_two_day_relationship
+    next_session_cpr_metric_df[key] = nextSessionCprBreadth
+    two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
 
-# for key in pivot_df:
+if send_message == 1:
+    for key in pivot_df:
+        early_message = (
+            f"today <b>{key}</b> Spot analysis:\n\n"
+            f"pivot: {pivot_df[key][1]['pivot']}\n"
+            f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
+            f"top central: {pivot_df[key][1]['top_central']}\n\n"
+            f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
+            f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
+            f"<b>{next_session_cpr_metric_df[key]}</b>\n\n"
+            f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[key]}\n\n"
+            # "⚠️ still in experimental stage\n"
+        )
+
+        serverside_functions.send_telegram_message(
+            bot_token= telegram_bot_token,
+            chat_id= personal_telegram_id,
+            text= early_message
+        )
+
+    if current_day.weekday() == 4 or current_day.weekday() == 0 or current_day.weekday() == 1:
+        select = 'NIFTY'
+    elif current_day.weekday() == 2 or current_day.weekday() == 3:
+        select = 'SENSEX'
+
     early_message = (
-        f"today {key} Spot analysis:\n\n"
-        f"pivot: {pivot_df[key][1]['pivot']}\n"
-        f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
-        f"top central: {pivot_df[key][1]['top_central']}\n\n"
-        f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
-        f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
-        f"cpr breadth: {next_session_cpr_metric_df[key]}\n"
-        f"two day value area relationship:\n*{two_day_relationship_df[key]}*\n\n"
+        f"today <b>{select}</b> Spot analysis:\n\n"
+        f"pivot: {pivot_df[select][1]['pivot']}\n"
+        f"bottom central: {pivot_df[select][1]['bottom_central']}\n"
+        f"top central: {pivot_df[select][1]['top_central']}\n\n"
+        f"resistance::\nR1:: {pivot_df[select][1]['R1']}\nR2:: {pivot_df[select][1]['R2']}\nR3:: {pivot_df[select][1]['R3']}\nR4:: {pivot_df[select][1]['R4']}\nR5:: {pivot_df[select][1]['R5']}\n"
+        f"support::\nS1:: {pivot_df[select][1]['S1']}\nS2:: {pivot_df[select][1]['S2']}\nS3:: {pivot_df[select][1]['S3']}\nS4:: {pivot_df[select][1]['S4']}\nS5:: {pivot_df[select][1]['S5']}\n\n"
+        f"<b>{next_session_cpr_metric_df[select]}</b>\n\n"
+        f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[select]}\n\n"
         # "⚠️ still in experimental stage\n"
     )
 
     serverside_functions.send_telegram_message(
         bot_token= telegram_bot_token,
-        chat_id= personal_telegram_id,
+        chat_id= broadcast_telegram_id,
         text= early_message
     )
-
-# 1 means yes && 0 means no
-testing = 0
-punch_order = 0
-strategy_one = 0
 
 # logic to pause the script till 0930Hrs or desired time.
 now = datetime.now()
@@ -146,10 +173,53 @@ if testing == 0:
             time.sleep(seconds_to_sleep)
         now_time = datetime.now().time()
 
-is_market_live = True
 while is_market_live:
     # constant update need
     current_minute = datetime.now().minute
+    current_day = datetime.now().date()
+
+    if now_time >= datetime.time(datetime.strptime("15:15", "%H:%M")) and now_time < datetime.time(datetime.strptime("15:30", "%H:%M")):
+        for key, value in watchlist.items():
+            spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=yesterday, to_date=current_day)
+            for i in range(len(spot_data)):
+                previous_day_high = spot_data[i]['high']
+                previous_day_low = spot_data[i]['low']
+                previous_day_close = spot_data[i]['close']
+                daily_pivots = serverside_functions.camarilla_pivot_calculation(data=spot_data[i])
+                if key not in pivot_df:
+                    pivot_df[key] = {}
+                pivot_df[key][i] = daily_pivots
+
+        for key in pivot_df:
+            nextSessionCprBreadth = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
+
+            logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+
+            if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
+                next_session_cpr_metric_df[key] = {}
+                two_day_relationship_df[key] = {}
+            next_session_cpr_metric_df[key] = nextSessionCprBreadth
+            two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
+
+        if send_message == 1:
+            for key in pivot_df:
+                early_message = (
+                    f"tomorrow <b>{key}</b> Spot <b>hypothetical analysis</b> based on 3:15PM candle closing data:\n\n"
+                    f"pivot: {pivot_df[key][1]['pivot']}\n"
+                    f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
+                    f"top central: {pivot_df[key][1]['top_central']}\n\n"
+                    f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
+                    f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
+                    f"<b>{next_session_cpr_metric_df[key]}</b>\n\n"
+                    f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[key]}\n\n"
+                    "⚠️ still in experimental stage\n"
+                )
+
+                serverside_functions.send_telegram_message(
+                    bot_token= telegram_bot_token,
+                    chat_id= broadcast_telegram_id,
+                    text= early_message
+                )
 
     # logic to tell user that market is open & logic starting to execute
     now_time = datetime.now().time()
@@ -162,7 +232,7 @@ while is_market_live:
 
     # logic to skip the order flow beyond market hours
     if testing == 0:
-        if now_time >= datetime.time(datetime.strptime("00:30", "%H:%M")):
+        if now_time >= datetime.time(datetime.strptime("00:30", "%H:%M")) and next_day == current_day:
             try:
                 os.remove(f"{deps_dir}/access_token.txt")
             except Exception as e:
@@ -173,22 +243,24 @@ while is_market_live:
                 )
             time.sleep(1)
             is_market_live = False
-        elif now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")):
+
+        elif now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")) and marketClosed == 0:
             # Send alert to Telegram
             serverside_functions.send_telegram_message(
                 bot_token = telegram_bot_token,
                 chat_id   = personal_telegram_id,
                 text      = "Market is closed"
                 )
+            marketClosed = 1
         
     # initial balance logic
     if datetime.time(datetime.strptime("10:15", "%H:%M")) <= datetime.now().time() < datetime.time(datetime.strptime("10:30", "%H:%M")):
     # if True:
-        if current_date.weekday() == 4 or current_date.weekday() == 0 or current_date.weekday() == 1:
+        if current_day.weekday() == 4 or current_day.weekday() == 0 or current_day.weekday() == 1:
             token_id = watchlist['NIFTY']
-        elif current_date.weekday() == 2 or current_date.weekday() == 3:
+        elif current_day.weekday() == 2 or current_day.weekday() == 3:
             token_id = watchlist['SENSEX']
-        initial_balance_data = kite.historical_data(instrument_token=token_id, from_date=current_date, to_date=current_date, interval='60minute')
+        initial_balance_data = kite.historical_data(instrument_token=token_id, from_date=current_day, to_date=current_day, interval='60minute')
         # buyer ki toh banegi CE contract
         buyer = round(initial_balance_data[0]['low'], -2)
         # seller ki banegi PE contract
@@ -207,26 +279,38 @@ while is_market_live:
     else:
         order_variety = 'regular'
 
-    # if current_minute % 15 == 0 and last_run_minute != current_minute:
-    if False:
-        for_15m_data = current_date - timedelta(days=28)
+    if current_minute % 15 == 0 and last_run_minute != current_minute:
+        # print(f"working... {last_run_minute} {current_minute}")
+    # if False:
+    # if True:
+        # for_15m_data = current_day - timedelta(days=28)
+        for_15m_data = current_day
 
         # Fetch Instrument 
-        nifty_index = "256265"
-        # nifty_futures = ""
-        # chart_15m = kite.historical_data(instrument_token=256265, interval="15minute", from_date=for_15m_data,
-        #                                  to_date=current_date)
-        chart_5m = kite.historical_data(instrument_token=watchlist['NIFTY'], interval="15minute", from_date=for_15m_data,
-                                        to_date=current_date)
+        watchlist['NIFTY'] = "256265"
+        chart15m = kite.historical_data(instrument_token=watchlist['NIFTY'], interval="15minute", from_date=for_15m_data,
+                                        to_date=current_day)
 
         # chart = kite
-        chart_df = pd.DataFrame(chart_5m)
-        # opt_df = pd.DataFrame(chart_15m)
-        ha_chart_df = serverside_functions.convert_heikin_ashi(chart_df).round(2)
+        chart_df = pd.DataFrame(chart15m)
+
+        # fair value gap calculation
+        fvg, fvg_high, fvg_low = serverside_functions.fair_value_gap(chart_df)
+        if fvg == 'bullish fvg' or fvg == 'bearish fvg':
+            serverside_functions.send_telegram_message(
+                bot_token=telegram_bot_token,
+                chat_id=broadcast_telegram_id,
+                text=f"{fvg}\nHigh:: {fvg_high}\nLow:: {fvg_low}\n"
+            )
+        
+        # candle stick pattern at camarilla levels, doji, hammer, engulfing
+
+        
         # -----------------------------------------------------------------------------------------------------------------------
 
         # Strategy 1 ==>> Double SuperTrend for Directional Trade
         if strategy_one == 1:
+            ha_chart_df = serverside_functions.convert_heikin_ashi(chart_df).round(2)
             st1_ha = pta.supertrend(
                 high=ha_chart_df['high'], low=ha_chart_df['low'], close=ha_chart_df['close'], length=11, multiplier=1
             ).round(2)
@@ -256,8 +340,8 @@ while is_market_live:
             # if True:
                 contract                         = 'PE'
                 getting                          = "long"
-                underlying_ltp                   = kite.ltp(nifty_index)
-                underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
+                underlying_ltp                   = kite.ltp(watchlist['NIFTY'])
+                underlying_ltp                   = underlying_ltp[watchlist['NIFTY']]['last_price'] # type: ignore
 
                 # Executing Hedge first
                 pe_opt_hedge_id = serverside_functions.finding_strike_delta_based(
@@ -355,8 +439,8 @@ while is_market_live:
             # if True:
                 contract                         = 'CE'
                 getting                          = "short"
-                underlying_ltp                   = kite.ltp(nifty_index)
-                underlying_ltp                   = underlying_ltp[nifty_index]['last_price'] # type: ignore
+                underlying_ltp                   = kite.ltp(watchlist['NIFTY'])
+                underlying_ltp                   = underlying_ltp[watchlist['NIFTY']]['last_price'] # type: ignore
 
                 # Executing Hedge first
                 ce_opt_hedge_id = serverside_functions.finding_strike_delta_based(
@@ -447,24 +531,24 @@ while is_market_live:
                 )
                 serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
-    elif current_minute % 30 == 0 and last_run_minute != current_minute:
+    elif current_minute % 60 == 0 and last_run_minute != current_minute:
         # send active update to telegram
         serverside_functions.send_telegram_message(
             bot_token     = telegram_bot_token,
             chat_id       = personal_telegram_id,
-            text          = "Algorithm is still active")
+            text          = "Algorithm is still active"
+        )
 
+    last_run_minute = current_minute
     # sleeping for 15 seconds
     time.sleep(15)
-    last_run_minute = current_minute
 
-    if datetime.now().time() >= datetime.time(datetime.strptime("00:15", "%H:%M")):
-        current_date += timedelta(days=1)
-        yesterday_date += timedelta(days=1)
+    if datetime.now().time() >= datetime.time(datetime.strptime("00:15", "%H:%M")) and next_day == current_day:
+        yesterday += timedelta(days=1)
         the_day_before_yesterday += timedelta(days=1)
     
         for key, value in watchlist.items():
-            spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday_date)
+            spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday)
             for i in range(len(spot_data)):
                 previous_day_high = spot_data[i]['high']
                 previous_day_low = spot_data[i]['low']
@@ -475,15 +559,15 @@ while is_market_live:
                 pivot_df[key][i] = daily_pivots
 
         for key in pivot_df:
-            next_session_cpr_metric = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
+            nextSessionCprBreadth = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
 
-            logic_flow_from_two_day_relationship = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+            logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
 
             if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
                 next_session_cpr_metric_df[key] = {}
                 two_day_relationship_df[key] = {}
-            next_session_cpr_metric_df[key] = next_session_cpr_metric
-            two_day_relationship_df[key] = logic_flow_from_two_day_relationship
+            next_session_cpr_metric_df[key] = nextSessionCprBreadth
+            two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
         
             EOD_message = (
                 "based on <b>intraday closing price</b>\n"
@@ -493,7 +577,7 @@ while is_market_live:
                 f"top central: {pivot_df[key][1]['top_central']}\n\n"
                 f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n\n"
                 f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
-                f"cpr breadth: {next_session_cpr_metric_df[key]}\n"
+                f"{next_session_cpr_metric_df[key]}\n"
                 f"two day value area relationship:\n<b>{two_day_relationship_df[key]}</b>\n\n"
                 "⚠️ still in experimental stage::\n"
                 "will improve on <b>EOD closing price.</b>"
@@ -504,4 +588,3 @@ while is_market_live:
                 chat_id= personal_telegram_id,
                 text= EOD_message
             )
-        # is_market_live = False

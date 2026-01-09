@@ -2,6 +2,13 @@ Bugs to remove:
   1. ~~scrap access token at the day end or before market start.~~
   2. ~~scrip is doing delay in taking trades; it took trades on next loop iteration.~~
   3. while calculating after the market next day cpr and camarilla support-resistance calculation has a variation.
+  4. ~~day conflict for EOD data sharing.~~
+
+Improvement:
+  1. ~~cpr metrics function~~
+  2. selected scrip according to weekday in line 103
+  3. ~~introduce FVG concept~~
+  4. ICT concepts
 
 Equity Swing trading:
   1. when price closes above CPR top central; go long until it closes below CPR bottom central.

@@ -3,12 +3,17 @@ Bugs to remove:
   2. ~~scrip is doing delay in taking trades; it took trades on next loop iteration.~~
   3. while calculating after the market next day cpr and camarilla support-resistance calculation has a variation.
   4. ~~day conflict for EOD data sharing.~~
+  5. ~~day conflict [the day before yesterday]~~
 
 Improvement:
   1. ~~cpr metrics function~~
-  2. selected scrip according to weekday in line 103
+  2. ~~selected scrip according to weekday in line 103~~
   3. ~~introduce FVG concept~~
   4. ICT concepts
+
+Opening price concept:
+  1. If the market opens at or below the H3 pivot level, we will look to sell any pull-back up to this point, as this opening price would indicate acceptance of the current two-day relationship. Selling any pull-back will also carry with it an expected outcome of reaching a new low within the current bearish trend. However, rejection of the twu-day relationship will occur if price opens above the H3 pivot level, as this opening behavior would indicate a vast change in sentiment from the prior day, thereby leading to a potential advance.
+  2.
 
 Equity Swing trading:
   1. when price closes above CPR top central; go long until it closes below CPR bottom central.

@@ -513,6 +513,9 @@ def camarilla_pivot_calculation(data):
     bottom_central   = round((daily_high + daily_low) / 2, 2)
     top_central      = round((pivot - bottom_central) + pivot, 2)
 
+    actualTopCentral = max(top_central, bottom_central)
+    actualBottomCentral = min(top_central, bottom_central)
+
     # calculation of camarilla pivot points
     resistance_1     = round(daily_close + range * 1.1 / 12, 2)
     resistance_2     = round(daily_close + range * 1.1 / 6, 2)
@@ -527,7 +530,7 @@ def camarilla_pivot_calculation(data):
     support_5        = round(daily_close - (resistance_5 - daily_close), 2)
     
     return {
-        "pivot": pivot, "bottom_central": bottom_central, "top_central": top_central, "R1": resistance_1, "R2": resistance_2, "R3": resistance_3, "R4": resistance_4, "R5": resistance_5, "S1": support_1, "S2": support_2, "S3": support_3, "S4": support_4, "S5": support_5
+        "pivot": pivot, "bottom_central": actualBottomCentral, "top_central": actualTopCentral, "R1": resistance_1, "R2": resistance_2, "R3": resistance_3, "R4": resistance_4, "R5": resistance_5, "S1": support_1, "S2": support_2, "S3": support_3, "S4": support_4, "S5": support_5
     }
 
 def cpr_metrics(pivot, TC, BC):
@@ -556,15 +559,15 @@ def cpr_metrics(pivot, TC, BC):
     pivot_width_ratio = round((abs(actual_tc - actual_bc) / pivot) * 100, 2)
 
     if pivot_width_ratio < 0.25:
-        return f"CPR breadth is {pivot_width_ratio}, so highly likely to be an explosive trending day"
+        return f"CPR breadth is {pivot_width_ratio}, so it increases the likelihood of a trending market."
     elif pivot_width_ratio < 0.50 and pivot_width_ratio >= 0.25:
-        return f"CPR breadth is {pivot_width_ratio}, so likely to be a trending Day"
-    elif pivot_width_ratio == 0.50:
-        return f"CPR breadth is {pivot_width_ratio}, so midline/neutral point between trend and range"
+        return f"CPR breadth is {pivot_width_ratio}, so it indicates a Trending type of Day"
+    # elif pivot_width_ratio == 0.50:
+    #     return f"CPR breadth is {pivot_width_ratio}, so midline/neutral point between trend and range"
     elif pivot_width_ratio > 0.50 and pivot_width_ratio <= 0.75:
-        return f"CPR breadth is {pivot_width_ratio}, so likely to be a sideways or trading range day"
+        return f"CPR breadth is {pivot_width_ratio}, so it indicates a Sideways or Trading Range Day"
     elif pivot_width_ratio > 0.75:
-        return f"CPR breadth is {pivot_width_ratio}, so highly likely to be a quiet or sideways day"
+        return f"CPR breadth is {pivot_width_ratio}, so it indicates the likelihood of sideways trading behaviour."
 
 
     # return f"{pivot_width_ratio}"
@@ -612,29 +615,33 @@ def two_day_relationship(t_high, t_low, y_high, y_low, index):
     - Bias is ACCEPTED if the Opening Price confirms the relationship (e.g., price opens above L3 in a Higher Value setup).
     - Bias is REJECTED if the Opening Price occurs against the grain (e.g., price gaps below the pivots in a Higher Value setup). This often leads to an aggressive move in the opposite direction.
     """
+
     if t_low > y_high:
-        return "Bias: Bullish. Market successfully pushed price higher."
+        return "Higher Value\nBias: Bullish.\nMarket successfully pushed price higher."
     elif t_high > y_high and t_low < y_high:
-        return "Bias: Moderately Bullish. Buyers are in control but strength is wavering."
+        return "Overlapping Higher Value\nBias: Moderately Bullish.\nBuyers are in control but strength is wavering."
     elif t_high < y_low:
-        return "Bias: Bearish. Market successfully pushed price lower."
+        return "Lower Value\nBias: Bearish.\nMarket successfully pushed price lower."
     elif t_low < y_low and t_high > y_low:
-        return "Bias: Moderately Bearish. Sellers in control but strength is wavering."
+        return "Overlapping Lower Value\nBias: Moderately Bearish.\nSellers in control but strength is wavering."
     elif t_high == y_high and t_low == y_low:
-        return "Bias: Neutral/Sideways. Breakout potential if price opens near extremes."
+        return "Unchanged Value\nBias: Sideways/Breakout.\nBreakout potential if price opens near extremes."
     elif t_high > y_high and t_low < y_low:
-        return "Bias: Sideways/Trading Range. Market is expanded but lacks conviction."
+        return "Outside Value\nBias: Sideways.\nMarket is expanded but lacks conviction."
     elif t_high < y_high and t_low > y_low:
-        return "Bias: Breakout. Market is winding up for an explosive Trend Day."
+        return "Inside Value\nBias: Breakout.\nMarket is winding up for an explosive Trend Day."
 
 def fair_value_gap(data):
-    if data['low'].iloc[-3] > data['high'].iloc[-1]:
-        low = data['low'].iloc[-3].item()
-        high = data['high'].iloc[-1].item()
-        return 'bearish fvg', high, low
-    elif data['high'].iloc[-3] < data['low'].iloc[-1]:
-        high = data['high'].iloc[-3].item()
-        low = data['low'].iloc[-1].item()
-        return 'bullish fvg', high, low
-    else:
-        return None, None, None
+    try:
+        if data['low'].iloc[-3] > data['high'].iloc[-1]:
+            low = data['low'].iloc[-3].item()
+            high = data['high'].iloc[-1].item()
+            return 'bearish fvg', high, low
+        elif data['high'].iloc[-3] < data['low'].iloc[-1]:
+            high = data['high'].iloc[-3].item()
+            low = data['low'].iloc[-1].item()
+            return 'bullish fvg', high, low
+        else:
+            return None, None, None
+    except Exception as e:
+        return e, None, None

@@ -65,7 +65,7 @@ testing = 0
 punch_order = 0
 strategy_one = 0
 send_message = 1
-marketClosed = 0
+marketClosed = True
 
 # Static variables 
 last_run_minute          = None
@@ -73,18 +73,18 @@ getting                  = None
 is_market_live           = True
 current_day              = datetime.now().date()
 next_day                 = current_day + timedelta(days=1)
-yesterday            = current_day - timedelta(days=1)
+yesterday                = current_day - timedelta(days=1)
 the_day_before_yesterday = current_day - timedelta(days=2)
 
 # adjusting dates according to weekdays. when there is saturday or sunday days are adjusted accordingly.
 if yesterday.weekday() == 6:
     yesterday  -= timedelta(days=2)
+    the_day_before_yesterday -= timedelta(days=2)
 elif yesterday.weekday() == 5:
     yesterday  -= timedelta(days=1)
-if the_day_before_yesterday.weekday() == 6:
-    the_day_before_yesterday -= timedelta(days=2)
-elif the_day_before_yesterday.weekday() == 5:
     the_day_before_yesterday -= timedelta(days=1)
+if the_day_before_yesterday.weekday() == 6:
+    the_day_before_yesterday -= timedelta(days= 2)
 
 """
 fetch daily hlc from two consecutive trading sessions.
@@ -93,8 +93,9 @@ then based on CPR/Camarilla calculations do interpretation for next session.
 """
 
 pivot_df = {}
-next_session_cpr_metric_df = {}
-two_day_relationship_df = {}
+nextSessionCPRHistograms = {}
+twoDayRelationshipBasedOnH3andL3data = {}
+twoDayRelationshipBasedOnCPRdata = {}
 
 for key, value in watchlist.items():
     spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday)
@@ -111,12 +112,15 @@ for key in pivot_df:
     nextSessionCprBreadth = serverside_functions.cpr_metrics(pivot=pivot_df[key][1]['pivot'], TC=pivot_df[key][1]['top_central'], BC=pivot_df[key][1]['bottom_central'])
 
     logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
+    logicFlowFromTwoDayRelationshipBasedOnCPRdata = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['top_central'], t_low=pivot_df[key][1]['bottom_central'] , y_high=pivot_df[key][0]['top_central'], y_low=pivot_df[key][0]['bottom_central'], index=key)
 
-    if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
-        next_session_cpr_metric_df[key] = {}
-        two_day_relationship_df[key] = {}
-    next_session_cpr_metric_df[key] = nextSessionCprBreadth
-    two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
+    if key not in nextSessionCPRHistograms and key not in twoDayRelationshipBasedOnH3andL3data:
+        nextSessionCPRHistograms[key] = {}
+        twoDayRelationshipBasedOnH3andL3data[key] = {}
+        twoDayRelationshipBasedOnCPRdata[key] = {}
+    nextSessionCPRHistograms[key] = nextSessionCprBreadth
+    twoDayRelationshipBasedOnH3andL3data[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
+    twoDayRelationshipBasedOnCPRdata[key] = logicFlowFromTwoDayRelationshipBasedOnCPRdata
 
 if send_message == 1:
     for key in pivot_df:
@@ -127,8 +131,9 @@ if send_message == 1:
             f"top central: {pivot_df[key][1]['top_central']}\n\n"
             f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
             f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
-            f"<b>{next_session_cpr_metric_df[key]}</b>\n\n"
-            f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[key]}\n\n"
+            f"<b>{nextSessionCPRHistograms[key]}</b>\n\n"
+            f"two day value area relationship: using CPR\n{twoDayRelationshipBasedOnCPRdata[key]}\n\n"
+            f"two day value area relationship: using L3 & H3\n{twoDayRelationshipBasedOnH3andL3data[key]}\n\n"
             # "⚠️ still in experimental stage\n"
         )
 
@@ -138,7 +143,7 @@ if send_message == 1:
             text= early_message
         )
 
-    if current_day.weekday() == 4 or current_day.weekday() == 0 or current_day.weekday() == 1:
+    if current_day.weekday() == 4 or current_day.weekday() == 5 or current_day.weekday() == 6 or current_day.weekday() == 0 or current_day.weekday() == 1:
         select = 'NIFTY'
     elif current_day.weekday() == 2 or current_day.weekday() == 3:
         select = 'SENSEX'
@@ -150,8 +155,9 @@ if send_message == 1:
         f"top central: {pivot_df[select][1]['top_central']}\n\n"
         f"resistance::\nR1:: {pivot_df[select][1]['R1']}\nR2:: {pivot_df[select][1]['R2']}\nR3:: {pivot_df[select][1]['R3']}\nR4:: {pivot_df[select][1]['R4']}\nR5:: {pivot_df[select][1]['R5']}\n"
         f"support::\nS1:: {pivot_df[select][1]['S1']}\nS2:: {pivot_df[select][1]['S2']}\nS3:: {pivot_df[select][1]['S3']}\nS4:: {pivot_df[select][1]['S4']}\nS5:: {pivot_df[select][1]['S5']}\n\n"
-        f"<b>{next_session_cpr_metric_df[select]}</b>\n\n"
-        f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[select]}\n\n"
+        f"<b>{nextSessionCPRHistograms[select]}</b>\n\n"
+        f"two day value area relationship: using CPR\n{twoDayRelationshipBasedOnCPRdata[key]}\n\n"
+        f"two day value area relationship: using L3 & H3\n{twoDayRelationshipBasedOnH3andL3data[select]}\n\n"
         # "⚠️ still in experimental stage\n"
     )
 
@@ -163,22 +169,24 @@ if send_message == 1:
 
 # logic to pause the script till 0930Hrs or desired time.
 now = datetime.now()
-now_time = now.time()
-target_time = datetime.time(datetime.strptime("09:30", "%H:%M"))
+nowTime = now.time()
+targetTime = datetime.time(datetime.strptime("09:15", "%H:%M"))
 if testing == 0:
-    if now_time < target_time:
-        target_dt = datetime.combine(now.date(), target_time)
-        seconds_to_sleep = int((target_dt - now).total_seconds())
-        if seconds_to_sleep > 0:
-            time.sleep(seconds_to_sleep)
-        now_time = datetime.now().time()
+    if nowTime < targetTime:
+        targetDateTime = datetime.combine(now.date(), targetTime)
+        secondsToSleep = int((targetDateTime - now).total_seconds())
+        if secondsToSleep > 0:
+            # print(f"pausing code till market open... for {secondsToSleep} seconds")
+            time.sleep(secondsToSleep)
 
 while is_market_live:
     # constant update need
-    current_minute = datetime.now().minute
-    current_day = datetime.now().date()
+    current_minute = datetime.now().minute # it's an integer value of a minute to operate under % comparison
+    nowTime = datetime.now().time() # it's an actual datetime.time class
+    current_day = datetime.now().date() # it's an actual datetime.date class
 
-    if now_time >= datetime.time(datetime.strptime("15:15", "%H:%M")) and now_time < datetime.time(datetime.strptime("15:30", "%H:%M")):
+    if datetime.time(datetime.strptime("15:15", "%H:%M")) <= nowTime < datetime.time(datetime.strptime("15:30", "%H:%M")):
+        # print(f"running a hypothesis analysis for next session... @ {nowTime}")
         for key, value in watchlist.items():
             spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=yesterday, to_date=current_day)
             for i in range(len(spot_data)):
@@ -195,11 +203,11 @@ while is_market_live:
 
             logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
 
-            if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
-                next_session_cpr_metric_df[key] = {}
-                two_day_relationship_df[key] = {}
-            next_session_cpr_metric_df[key] = nextSessionCprBreadth
-            two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
+            if key not in nextSessionCPRHistograms and key not in twoDayRelationshipBasedOnH3andL3data:
+                nextSessionCPRHistograms[key] = {}
+                twoDayRelationshipBasedOnH3andL3data[key] = {}
+            nextSessionCPRHistograms[key] = nextSessionCprBreadth
+            twoDayRelationshipBasedOnH3andL3data[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
 
         if send_message == 1:
             for key in pivot_df:
@@ -210,8 +218,9 @@ while is_market_live:
                     f"top central: {pivot_df[key][1]['top_central']}\n\n"
                     f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n"
                     f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
-                    f"<b>{next_session_cpr_metric_df[key]}</b>\n\n"
-                    f"two day value area relationship: using L3 & H3\n{two_day_relationship_df[key]}\n\n"
+                    f"<b>{nextSessionCPRHistograms[key]}</b>\n\n"
+                    f"two day value area relationship: using CPR\n{twoDayRelationshipBasedOnCPRdata[key]}\n\n"
+                    f"two day value area relationship: using L3 & H3\n{twoDayRelationshipBasedOnH3andL3data[key]}\n\n"
                     "⚠️ still in experimental stage\n"
                 )
 
@@ -222,17 +231,17 @@ while is_market_live:
                 )
 
     # logic to tell user that market is open & logic starting to execute
-    now_time = datetime.now().time()
-    if now_time < target_time:
+    if nowTime == datetime.time(datetime.strptime("09:15", "%H:%M")):
         serverside_functions.send_telegram_message(
             bot_token= telegram_bot_token,
             chat_id= personal_telegram_id,
             text= "Market Open & Logic started to execute"
         )
 
-    # logic to skip the order flow beyond market hours
     if testing == 0:
-        if now_time >= datetime.time(datetime.strptime("00:30", "%H:%M")) and next_day == current_day:
+        # deleting access token after 12:30AM midnight, then stop the code from running in a loop.
+        if nowTime >= datetime.time(datetime.strptime("00:30", "%H:%M")) and next_day == current_day:
+            # print("stepped into this block to delete the access token and break the script")
             try:
                 os.remove(f"{deps_dir}/access_token.txt")
             except Exception as e:
@@ -242,20 +251,22 @@ while is_market_live:
                 text      = f"Exception {e} raised while deleting access_token & instrument_file"
                 )
             time.sleep(1)
-            is_market_live = False
+            break
 
-        elif now_time >= datetime.time(datetime.strptime("15:30", "%H:%M")) and marketClosed == 0:
+        # sending message about market is closed.
+        elif datetime.time(datetime.strptime("15:30", "%H:%M")) <= nowTime <= datetime.time(datetime.strptime("15:35", "%H:%M")) and marketClosed:
             # Send alert to Telegram
             serverside_functions.send_telegram_message(
                 bot_token = telegram_bot_token,
                 chat_id   = personal_telegram_id,
                 text      = "Market is closed"
                 )
-            marketClosed = 1
+            marketClosed = False
         
     # initial balance logic
-    if datetime.time(datetime.strptime("10:15", "%H:%M")) <= datetime.now().time() < datetime.time(datetime.strptime("10:30", "%H:%M")):
+    if datetime.time(datetime.strptime("10:15", "%H:%M")) <= nowTime < datetime.time(datetime.strptime("10:30", "%H:%M")):
     # if True:
+        # print(f"checking the initial balance... @ {nowTime}")
         if current_day.weekday() == 4 or current_day.weekday() == 0 or current_day.weekday() == 1:
             token_id = watchlist['NIFTY']
         elif current_day.weekday() == 2 or current_day.weekday() == 3:
@@ -271,7 +282,7 @@ while is_market_live:
     # current_date = datetime.now().date()
     equity_trading_hours = (
             datetime.time(
-            datetime.strptime("09:15", "%H:%M")) <= datetime.now().time() <= datetime.time(
+            datetime.strptime("09:15", "%H:%M")) <= nowTime <= datetime.time(
             datetime.strptime("15:30", "%H:%M"))
     )
     if not equity_trading_hours:
@@ -287,9 +298,8 @@ while is_market_live:
         for_15m_data = current_day
 
         # Fetch Instrument 
-        watchlist['NIFTY'] = "256265"
-        chart15m = kite.historical_data(instrument_token=watchlist['NIFTY'], interval="15minute", from_date=for_15m_data,
-                                        to_date=current_day)
+        # watchlist['NIFTY'] = "256265"
+        chart15m = kite.historical_data(instrument_token=watchlist['NIFTY'], interval="15minute", from_date=for_15m_data, to_date=current_day)
 
         # chart = kite
         chart_df = pd.DataFrame(chart15m)
@@ -531,7 +541,7 @@ while is_market_live:
                 )
                 serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
-    elif current_minute % 60 == 0 and last_run_minute != current_minute:
+    elif nowTime == datetime.time(datetime.strptime("00", "%M")):
         # send active update to telegram
         serverside_functions.send_telegram_message(
             bot_token     = telegram_bot_token,
@@ -540,12 +550,18 @@ while is_market_live:
         )
 
     last_run_minute = current_minute
-    # sleeping for 15 seconds
-    time.sleep(15)
 
-    if datetime.now().time() >= datetime.time(datetime.strptime("00:15", "%H:%M")) and next_day == current_day:
-        yesterday += timedelta(days=1)
-        the_day_before_yesterday += timedelta(days=1)
+    if nowTime >= datetime.time(datetime.strptime("00:15", "%H:%M")) and next_day == current_day:
+        # print("stepped into this code block to send next day's trading bhaav.")
+        if current_day.weekday() == 1:
+            yesterday = current_day - timedelta(days=1)
+            the_day_before_yesterday = current_day - timedelta(days=4)
+        elif current_day.weekday() == 2:
+            yesterday = current_day - timedelta(days=1)
+            the_day_before_yesterday = current_day - timedelta(days=2)
+        elif current_day.weekday() == 5:
+            yesterday = current_day - timedelta(days=1)
+            the_day_before_yesterday = current_day - timedelta(days=2)
     
         for key, value in watchlist.items():
             spot_data = kite.historical_data(instrument_token=value, interval='day', from_date=the_day_before_yesterday, to_date=yesterday)
@@ -563,11 +579,11 @@ while is_market_live:
 
             logicFlowFromTwoDayRelationshipBasedOnH3AndL3 = serverside_functions.two_day_relationship(t_high=pivot_df[key][1]['R3'], t_low=pivot_df[key][1]['S3'], y_high=pivot_df[key][0]['R3'], y_low=pivot_df[key][0]['S3'], index=key)
 
-            if key not in next_session_cpr_metric_df and key not in two_day_relationship_df:
-                next_session_cpr_metric_df[key] = {}
-                two_day_relationship_df[key] = {}
-            next_session_cpr_metric_df[key] = nextSessionCprBreadth
-            two_day_relationship_df[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
+            if key not in nextSessionCPRHistograms and key not in twoDayRelationshipBasedOnH3andL3data:
+                nextSessionCPRHistograms[key] = {}
+                twoDayRelationshipBasedOnH3andL3data[key] = {}
+            nextSessionCPRHistograms[key] = nextSessionCprBreadth
+            twoDayRelationshipBasedOnH3andL3data[key] = logicFlowFromTwoDayRelationshipBasedOnH3AndL3
         
             EOD_message = (
                 "based on <b>intraday closing price</b>\n"
@@ -577,8 +593,9 @@ while is_market_live:
                 f"top central: {pivot_df[key][1]['top_central']}\n\n"
                 f"resistance::\nR1:: {pivot_df[key][1]['R1']}\nR2:: {pivot_df[key][1]['R2']}\nR3:: {pivot_df[key][1]['R3']}\nR4:: {pivot_df[key][1]['R4']}\nR5:: {pivot_df[key][1]['R5']}\n\n"
                 f"support::\nS1:: {pivot_df[key][1]['S1']}\nS2:: {pivot_df[key][1]['S2']}\nS3:: {pivot_df[key][1]['S3']}\nS4:: {pivot_df[key][1]['S4']}\nS5:: {pivot_df[key][1]['S5']}\n\n"
-                f"{next_session_cpr_metric_df[key]}\n"
-                f"two day value area relationship:\n<b>{two_day_relationship_df[key]}</b>\n\n"
+                f"{nextSessionCPRHistograms[key]}\n"
+                f"two day value area relationship: using CPR\n{twoDayRelationshipBasedOnCPRdata[key]}\n\n"
+                f"two day value area relationship: using L3 & H3\n{twoDayRelationshipBasedOnH3andL3data[key]}\n\n"
                 "⚠️ still in experimental stage::\n"
                 "will improve on <b>EOD closing price.</b>"
             )

@@ -125,7 +125,7 @@ for key in pivot_df:
 if send_message == 1:
     for key in pivot_df:
         early_message = (
-            f"today <b>{key}</b> Spot analysis:\n\n"
+            f"today <b>{key}</b> Spot information based on Camarilla Pivot:\n\n"
             f"pivot: {pivot_df[key][1]['pivot']}\n"
             f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
             f"top central: {pivot_df[key][1]['top_central']}\n\n"
@@ -149,7 +149,7 @@ if send_message == 1:
         select = 'SENSEX'
 
     early_message = (
-        f"today <b>{select}</b> Spot analysis:\n\n"
+        f"today <b>{select}</b> Spot information based on Camarilla Pivot:\n\n"
         f"pivot: {pivot_df[select][1]['pivot']}\n"
         f"bottom central: {pivot_df[select][1]['bottom_central']}\n"
         f"top central: {pivot_df[select][1]['top_central']}\n\n"
@@ -212,7 +212,7 @@ while is_market_live:
         if send_message == 1:
             for key in pivot_df:
                 early_message = (
-                    f"tomorrow <b>{key}</b> Spot <b>hypothetical analysis</b> based on 3:15PM candle closing data:\n\n"
+                    f"tomorrow <b>{key}</b> Spot <b>hypothetical information</b> based on 3:15PM candle closing data:\n\n"
                     f"pivot: {pivot_df[key][1]['pivot']}\n"
                     f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
                     f"top central: {pivot_df[key][1]['top_central']}\n\n"
@@ -541,7 +541,7 @@ while is_market_live:
                 )
                 serverside_functions.send_telegram_message(telegram_bot_token, personal_telegram_id, telegram_message)
 
-    elif nowTime == datetime.time(datetime.strptime("00", "%M")):
+    if nowTime >= datetime.time(datetime.strptime("00", "%M")) and last_run_minute != current_minute:
         # send active update to telegram
         serverside_functions.send_telegram_message(
             bot_token     = telegram_bot_token,
@@ -587,7 +587,7 @@ while is_market_live:
         
             EOD_message = (
                 "based on <b>intraday closing price</b>\n"
-                f"tomorrow {key} Spot analysis:\n\n"
+                f"tomorrow {key} Spot information based on Camarilla Pivot:\n\n"
                 f"pivot: {pivot_df[key][1]['pivot']}\n"
                 f"bottom central: {pivot_df[key][1]['bottom_central']}\n"
                 f"top central: {pivot_df[key][1]['top_central']}\n\n"

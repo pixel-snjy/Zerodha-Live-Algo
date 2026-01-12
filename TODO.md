@@ -4,6 +4,7 @@ Bugs to remove:
   3. while calculating after the market next day cpr and camarilla support-resistance calculation has a variation.
   4. ~~day conflict for EOD data sharing.~~
   5. ~~day conflict [the day before yesterday]~~
+  6. resolved a bug where it isn't sending a message about algo running every hour.
 
 Improvement:
   1. ~~cpr metrics function~~

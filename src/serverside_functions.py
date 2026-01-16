@@ -3,6 +3,8 @@ import time
 from typing import cast, Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 import mibian
+import datetime
+from kiteconnect import KiteTicker
 
 import pandas as pd
 # import polars as pl
@@ -533,6 +535,42 @@ def camarilla_pivot_calculation(data):
         "pivot": pivot, "bottom_central": actualBottomCentral, "top_central": actualTopCentral, "R1": resistance_1, "R2": resistance_2, "R3": resistance_3, "R4": resistance_4, "R5": resistance_5, "S1": support_1, "S2": support_2, "S3": support_3, "S4": support_4, "S5": support_5
     }
 
+def eod_camarilla_pivot_calculation(data):
+    """
+    data: feed data in dictionary key: value pairs
+    example; { 'high': int/float, 'low': int/float, 'close': int/float }
+    """
+    daily_high       = data['ohlc']['high']
+    daily_low        = data['ohlc']['low']
+    daily_close      = data['last_price']
+
+    range = round(daily_high - daily_low, 2)
+
+    # calculation of 'central pivot range' (CPR)
+    pivot            = round((daily_high + daily_low + daily_close) / 3, 2)
+    bottom_central   = round((daily_high + daily_low) / 2, 2)
+    top_central      = round((pivot - bottom_central) + pivot, 2)
+
+    actualTopCentral = max(top_central, bottom_central)
+    actualBottomCentral = min(top_central, bottom_central)
+
+    # calculation of camarilla pivot points
+    resistance_1     = round(daily_close + range * 1.1 / 12, 2)
+    resistance_2     = round(daily_close + range * 1.1 / 6, 2)
+    resistance_3     = round(daily_close + range * 1.1 / 4, 2)
+    resistance_4     = round(daily_close + range * 1.1 / 2, 2)
+    resistance_5     = round((daily_high / daily_low) * daily_close, 2)
+
+    support_1        = round(daily_close - range * 1.1 / 12, 2)
+    support_2        = round(daily_close - range * 1.1 / 6, 2)
+    support_3        = round(daily_close - range * 1.1 / 4, 2)
+    support_4        = round(daily_close - range * 1.1 / 2, 2)
+    support_5        = round(daily_close - (resistance_5 - daily_close), 2)
+    
+    return {
+        "pivot": pivot, "bottom_central": actualBottomCentral, "top_central": actualTopCentral, "R1": resistance_1, "R2": resistance_2, "R3": resistance_3, "R4": resistance_4, "R5": resistance_5, "S1": support_1, "S2": support_2, "S3": support_3, "S4": support_4, "S5": support_5
+    }
+
 def cpr_metrics(pivot, TC, BC):
     """
     Summary Table for Pivot Range Histogram Interpretation:
@@ -617,19 +655,19 @@ def two_day_relationship(t_high, t_low, y_high, y_low, index):
     """
 
     if t_low > y_high:
-        return "Higher Value\nBias: Bullish.\nMarket successfully pushed price higher."
+        return f"{' ' * 4}* Higher Value\n{' ' * 4}-Bias: Bullish.\n{' ' * 4}-Market successfully pushed price higher."
     elif t_high > y_high and t_low < y_high:
-        return "Overlapping Higher Value\nBias: Moderately Bullish.\nBuyers are in control but strength is wavering."
+        return f"{' ' * 4}-Overlapping Higher Value\n{' ' * 4}-Bias: Moderately Bullish.\n{' ' * 4}-Buyers are in control but strength is wavering."
     elif t_high < y_low:
-        return "Lower Value\nBias: Bearish.\nMarket successfully pushed price lower."
+        return f"{' ' * 4}-Lower Value\n{' ' * 4}-Bias: Bearish.\n{' ' * 4}-Market successfully pushed price lower."
     elif t_low < y_low and t_high > y_low:
-        return "Overlapping Lower Value\nBias: Moderately Bearish.\nSellers in control but strength is wavering."
+        return f"{' ' * 4}-Overlapping Lower Value\n{' ' * 4}-Bias: Moderately Bearish.\n{' ' * 4}-Sellers in control but strength is wavering."
     elif t_high == y_high and t_low == y_low:
-        return "Unchanged Value\nBias: Sideways/Breakout.\nBreakout potential if price opens near extremes."
+        return f"{' ' * 4}-Unchanged Value\n{' ' * 4}-Bias: Sideways/Breakout.\n{' ' * 4}-Breakout potential if price opens near extremes."
     elif t_high > y_high and t_low < y_low:
-        return "Outside Value\nBias: Sideways.\nMarket is expanded but lacks conviction."
+        return f"{' ' * 4}-Outside Value\n{' ' * 4}-Bias: Sideways.\n{' ' * 4}-Market is expanded but lacks conviction."
     elif t_high < y_high and t_low > y_low:
-        return "Inside Value\nBias: Breakout.\nMarket is winding up for an explosive Trend Day."
+        return f"{' ' * 4}-Inside Value\n{' ' * 4}-Bias: Breakout.\n{' ' * 4}-Market is winding up for an explosive Trend Day."
 
 def fair_value_gap(data):
     try:
@@ -645,3 +683,6 @@ def fair_value_gap(data):
             return None, None, None
     except Exception as e:
         return e, None, None
+
+def initialBalance():
+    pass

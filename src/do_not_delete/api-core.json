@@ -1,8 +1,0 @@
-{
-  "zerodha_api_key" : "ggrgyvw8rj033lk5",
-  "zerodha_api_secret" : "1tyieyds8uopvxtg7sf1wiloz14rh6mg",
-  "telegram_bot_token" : "8067028296:AAG1trO3N1BOot4jMFr72oBmfzmXnFZuwMg",
-  "personal_telegram_id" : "7569544974",
-  "group_telegram_id" : "-1002779216953",
-  "zerodha_totp_secret_key": "GNB6HJSPG2Y4ULSEY3JQWVOIWHFPQXGL"
-}
